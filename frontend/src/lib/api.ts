@@ -1,7 +1,7 @@
 // API utility for admin panel
 // Force Vercel redeploy: 2024-06-09
 // For local development, use the local backend:
-export const API_URL = 'http://localhost:4000/api';
+export const API_URL = 'https://api-eyes-main.onrender.com';
 // For production, switch to the deployed backend:
 // export const API_URL = 'https://eyes-perfume-api-zpf7.onrender.com/api';
 
