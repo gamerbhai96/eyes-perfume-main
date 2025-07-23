@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, ShoppingBag, User, Search } from 'lucide-react';
+import { Sparkles, ShoppingBag, User, Search, Menu } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useCart } from '@/hooks/use-cart';
 import { perfumes } from '../data/perfumes';
@@ -17,6 +17,7 @@ const Navigation = () => {
   const filteredSuggestions = searchTerm.length > 0
     ? perfumes.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 5)
     : [];
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -35,7 +36,12 @@ const Navigation = () => {
             </span>
           </Link>
 
-          {/* Navigation Links */}
+          {/* Hamburger for mobile */}
+          <button className="lg:hidden flex items-center justify-center p-2 rounded hover:bg-secondary transition" onClick={() => setMobileMenuOpen(v => !v)} aria-label="Open menu">
+            <Menu className="h-7 w-7 text-primary" />
+          </button>
+
+          {/* Navigation Links (desktop only) */}
           <div className="hidden lg:flex items-center gap-8">
             <Link
               to="/"
@@ -69,7 +75,7 @@ const Navigation = () => {
             </Link>
           </div>
 
-          {/* Search Bar */}
+          {/* Search Bar (desktop only) */}
           <div className="hidden md:flex items-center relative max-w-sm flex-1 mx-8">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -103,38 +109,37 @@ const Navigation = () => {
             )}
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex items-center gap-4">
-            {/* Cart Button with Badge */}
+          {/* Action Buttons (desktop only) */}
+          <div className="hidden lg:flex items-center gap-4">
             <Link to="/cart">
-            <Button variant="ghost" size="icon" className="relative hidden md:flex">
-              <ShoppingBag className="h-5 w-5" />
-              {cartCount > 0 && (
-                <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center bg-primary text-primary-foreground">
-                  {cartCount}
-                </Badge>
-              )}
-            </Button>
+              <Button variant="ghost" size="icon" className="relative">
+                <ShoppingBag className="h-5 w-5" />
+                {cartCount > 0 && (
+                  <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center bg-primary text-primary-foreground">
+                    {cartCount}
+                  </Badge>
+                )}
+              </Button>
             </Link>
             {user ? (
               <>
                 <Link to="/profile">
-                  <Button variant="outline" size="sm" className="hidden md:flex">
+                  <Button variant="outline" size="sm">
                     <User className="h-4 w-4 mr-2" />
                     {user.firstName}
                   </Button>
                 </Link>
-                <Button variant="destructive" size="sm" className="hidden md:flex" onClick={logout}>
+                <Button variant="destructive" size="sm" onClick={logout}>
                   Logout
                 </Button>
               </>
             ) : (
-            <Link to="/login">
-              <Button variant="outline" size="sm" className="hidden md:flex">
-                <User className="h-4 w-4 mr-2" />
-                Login
-              </Button>
-            </Link>
+              <Link to="/login">
+                <Button variant="outline" size="sm">
+                  <User className="h-4 w-4 mr-2" />
+                  Login
+                </Button>
+              </Link>
             )}
             <Link to="/products">
               <Button size="sm" className="glow-effect">
@@ -143,6 +148,48 @@ const Navigation = () => {
             </Link>
           </div>
         </div>
+        {/* Mobile Menu Dropdown */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden mt-4 bg-background border border-border rounded shadow-lg p-6 flex flex-col gap-4 animate-fadeIn z-50">
+            <Link to="/" className="font-inter font-medium text-lg" onClick={() => setMobileMenuOpen(false)}>
+              Home
+            </Link>
+            <Link to="/products" className="font-inter font-medium text-lg" onClick={() => setMobileMenuOpen(false)}>
+              Products
+            </Link>
+            <Link to="/about" className="font-inter font-medium text-lg" onClick={() => setMobileMenuOpen(false)}>
+              About
+            </Link>
+            <Link to="/cart" className="font-inter font-medium text-lg flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+              <ShoppingBag className="h-5 w-5" />
+              Cart
+              {cartCount > 0 && (
+                <Badge className="h-5 w-5 rounded-full p-0 text-xs flex items-center justify-center bg-primary text-primary-foreground">
+                  {cartCount}
+                </Badge>
+              )}
+            </Link>
+            {user ? (
+              <>
+                <Link to="/profile" className="font-inter font-medium text-lg flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                  <User className="h-4 w-4" />
+                  Profile
+                </Link>
+                <button className="font-inter font-medium text-lg text-red-600 text-left" onClick={() => { logout(); setMobileMenuOpen(false); }}>
+                  Logout
+                </button>
+              </>
+            ) : (
+              <Link to="/login" className="font-inter font-medium text-lg flex items-center gap-2" onClick={() => setMobileMenuOpen(false)}>
+                <User className="h-4 w-4" />
+                Login
+              </Link>
+            )}
+            <Link to="/products" className="font-inter font-medium text-lg" onClick={() => setMobileMenuOpen(false)}>
+              Shop Now
+            </Link>
+          </div>
+        )}
       </div>
     </nav>
   );
