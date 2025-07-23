@@ -98,7 +98,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/perfume')
 // --- Middleware ---
 app.use(cors({
   origin: [
-    'https://eyes-perfume-main.vercel.app/'
+    'https://eyes-perfume-main.vercel.app'
     // Added for local network frontend
   ],
   credentials: true
