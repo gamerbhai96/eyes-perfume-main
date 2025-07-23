@@ -1,0 +1,251 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+/* EYES Perfume - Luxury Design System */
+@layer base {
+  /* ... */
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradientMove 8s ease-in-out infinite;
+}
+@keyframes gradientMove {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Perfume Card Glow Effect */
+.perfume-card {
+  position: relative;
+  z-index: 1;
+  transition: all 0.3s ease;
+}
+
+.perfume-card .group {
+  position: relative;
+  overflow: hidden;
+}
+
+.perfume-card .group::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.perfume-card:hover .group::after {
+  opacity: 1;
+}
+
+.perfume-card img {
+  transition: transform 0.7s ease;
+}
+
+.perfume-card:hover img {
+  transform: scale(1.1);
+}
+
+/* Animation for card entrance */
+.stagger-animation {
+  animation: fadeInUp 0.6s ease forwards;
+  opacity: 0;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Gradient text effect */
+.gradient-text {
+  background: linear-gradient(to right, #FFD700, #FFA500);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: inline-block;
+}
+
+/* Gradient hero background */
+.bg-gradient-hero {
+  background: linear-gradient(to bottom right, rgba(255, 215, 0, 0.05), rgba(255, 165, 0, 0.05));
+}
+
+/* Button Effects */
+.glow-effect {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  background: linear-gradient(to right, #FFD700, #FFA500);
+  border: none;
+  background-size: 200% auto;
+}
+
+.glow-effect:hover {
+  background-position: right center;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -10px rgba(255, 215, 0, 0.5);
+}
+
+.glow-effect:active {
+  transform: translateY(0);
+  box-shadow: 0 5px 10px -5px rgba(255, 215, 0, 0.3);
+}
+
+.glow-effect::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.2), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+}
+
+.glow-effect:hover::before {
+  transform: translateX(100%);
+}
+
+/* Outline Button Effects */
+.button-outline {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  background: transparent;
+}
+
+.button-outline:hover {
+  border-color: #FFD700;
+  background: rgba(255, 215, 0, 0.05);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px -5px rgba(255, 215, 0, 0.2);
+}
+
+.button-outline:active {
+  transform: translateY(0);
+}
+
+.button-outline::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(90deg, #FFD700, #FFA500);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.button-outline:hover::before {
+  opacity: 1;
+}
+
+/* Icon Button Effects */
+.button-icon {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.button-icon:hover {
+  transform: translateY(-2px) scale(1.05);
+}
+
+.button-icon:active {
+  transform: translateY(0) scale(1);
+}
+
+/* Add these classes to your existing button styles */
+.button-primary {
+  background: linear-gradient(to right, #FFD700, #FFA500);
+  color: black;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.button-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -10px rgba(255, 215, 0, 0.5);
+}
+
+.button-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 5px 10px -5px rgba(255, 215, 0, 0.3);
+}
+
+/* Float animation for decorative elements */
+.float-animation {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+/* Add a subtle shadow on hover */
+.perfume-card {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: all 0.3s ease;
+}
+
+.perfume-card:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  transform: translateY(-4px);
+}
