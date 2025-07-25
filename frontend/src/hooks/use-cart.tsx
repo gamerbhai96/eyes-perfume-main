@@ -40,6 +40,23 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
   const addToCart = async (perfumeId: string, quantity: number = 1) => {
     if (!token) throw new Error('Not authenticated');
+    // Optimistic update
+    setCart(prevCart => {
+      const idx = prevCart.findIndex(item => item.perfumeId === perfumeId);
+      if (quantity < 1) {
+        // Remove item
+        return prevCart.filter(item => item.perfumeId !== perfumeId);
+      } else if (idx > -1) {
+        // Update quantity
+        return prevCart.map(item =>
+          item.perfumeId === perfumeId ? { ...item, quantity } : item
+        );
+      } else {
+        // Add new item
+        return [...prevCart, { perfumeId, quantity }];
+      }
+    });
+    // Sync with backend
     const res = await fetch(`${API_URL}/cart`, {
       method: 'POST',
       headers: {
@@ -49,9 +66,12 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
       body: JSON.stringify({ perfumeId, quantity })
     });
     if (!res.ok) {
-      throw new Error('Failed to add to cart');
+      // Revert on error
+      await fetchCart();
+      throw new Error('Failed to update cart');
     }
-    await fetchCart();
+    // Optionally, you can re-fetch the cart here if you want to ensure consistency
+    // await fetchCart();
   };
 
   const contextValue: CartContextType = {
