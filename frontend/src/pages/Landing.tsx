@@ -7,6 +7,7 @@ import { useCart } from '@/hooks/use-cart';
 import { useState, useEffect } from 'react';
 import { API_URL } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
+import React from 'react';
 
 const FALLBACK_IMAGES = [
   'https://images.pexels.com/photos/1961792/pexels-photo-1961792.jpeg',
@@ -14,7 +15,7 @@ const FALLBACK_IMAGES = [
   'https://images.pexels.com/photos/724635/pexels-photo-724635.jpeg',
 ];
 
-const Landing = () => {
+const Landing = React.memo(() => {
   const { token } = useAuth();
   const { addToCart } = useCart();
   const [cartMessage, setCartMessage] = useState('');
@@ -173,6 +174,6 @@ const Landing = () => {
       )}
     </div>
   );
-};
+});
 
 export default Landing;

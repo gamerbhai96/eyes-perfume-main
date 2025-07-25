@@ -58,6 +58,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           alt={product.name}
           className="object-cover w-full h-full transition-transform duration-300 hover:scale-105"
           onError={() => setImgError(true)}
+          loading="lazy"
         />
         {product.isBestseller && (
           <Badge className="absolute top-2 left-2 bg-yellow-400 text-black font-bold">Bestseller</Badge>
@@ -121,4 +122,4 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   );
 };
 
-export default ProductCard; 
+export default React.memo(ProductCard); 

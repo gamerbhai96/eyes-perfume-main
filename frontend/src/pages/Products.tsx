@@ -9,6 +9,7 @@ import { useCart } from '@/hooks/use-cart';
 import { Link } from 'react-router-dom';
 import * as api from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
+import React from 'react';
 
 const FALLBACK_IMAGES = [
   'https://images.pexels.com/photos/1961792/pexels-photo-1961792.jpeg',
@@ -16,7 +17,7 @@ const FALLBACK_IMAGES = [
   'https://images.pexels.com/photos/724635/pexels-photo-724635.jpeg',
 ];
 
-const Products = () => {
+const Products = React.memo(() => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const { token } = useAuth();
@@ -157,6 +158,6 @@ const Products = () => {
       )}
     </div>
   );
-};
+});
 
 export default Products;
