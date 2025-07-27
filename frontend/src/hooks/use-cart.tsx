@@ -3,6 +3,7 @@ import { useAuth } from './use-auth';
 import { API_URL } from '@/lib/api';
 
 interface CartItem {
+  product: any;
   perfumeId: string;
   quantity: number;
 }
@@ -12,6 +13,7 @@ interface CartContextType {
   cartCount: number;
   fetchCart: () => void;
   addToCart: (perfumeId: string, quantity?: number) => Promise<void>;
+  setCart: React.Dispatch<React.SetStateAction<CartItem[]>>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -79,6 +81,7 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
     cartCount: cart.length,
     fetchCart,
     addToCart,
+    setCart,
   };
 
   return (

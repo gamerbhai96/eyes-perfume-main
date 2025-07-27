@@ -5,6 +5,7 @@ import { Trash2, Loader2 } from 'lucide-react';
 import { useCart } from '@/hooks/use-cart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { API_URL } from '@/lib/api';
 
 interface CartItem {
   perfumeId: string;
@@ -23,7 +24,7 @@ const Cart = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
 
-  const { cart, fetchCart } = useCart();
+  const { cart, fetchCart, setCart } = useCart();
   const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
@@ -37,7 +38,21 @@ const Cart = () => {
     setLoadingItemId(perfumeId);
     setError('');
     try {
-      await addToCart(perfumeId, quantity);
+      if (quantity === 0) {
+        // Optimistically remove item from cart
+        setCart(prevCart => prevCart.filter(item => item.perfumeId !== perfumeId));
+        const res = await fetch(`${API_URL}/cart/${perfumeId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) {
+          // Revert if backend fails
+          await fetchCart();
+          setError('Failed to remove item from cart');
+        }
+      } else {
+        await addToCart(perfumeId, quantity);
+      }
     } catch {
       setError('Failed to update cart');
     } finally {
