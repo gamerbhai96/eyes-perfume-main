@@ -267,20 +267,37 @@ app.post("/api/signup", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: "Missing credentials" });
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password required." });
+    }
+
+    console.log("🔐 Login attempt:", email);
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user || !(await bcrypt.compare(password, user.passwordHash)))
-      return res.status(400).json({ error: "Invalid email or password" });
+    if (!user) {
+      console.warn("⚠️ Login failed — user not found:", email);
+      return res.status(400).json({ error: "Invalid credentials." });
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash || "");
+    if (!valid) {
+      console.warn("⚠️ Login failed — wrong password:", email);
+      return res.status(400).json({ error: "Invalid credentials." });
+    }
 
     const otp = generateOtp();
     otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user };
+
+    console.log(`📧 Sending OTP ${otp} to ${email}`);
     await sendOtpEmail(email, otp);
+
+    console.log("✅ OTP email sent successfully!");
     res.json({ message: "OTP sent to your email." });
   } catch (err) {
-    console.error("Login Error:", err);
-    res.status(500).json({ error: "Server error." });
+    console.error("🔥 /api/login internal error:", err?.response?.body || err);
+    res.status(500).json({ error: "Internal Server Error. Check backend logs." });
   }
 });
+
 
 // Verify OTP
 app.post("/api/verify-otp", (req, res) => {
