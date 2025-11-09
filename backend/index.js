@@ -232,8 +232,10 @@ const adminRouter = AdminJSExpress.buildAuthenticatedRouter(admin, {
 app.use(admin.options.rootPath, adminRouter);
 
 // -------------------- BREVO EMAIL --------------------
+import Brevo from "@getbrevo/brevo";
+
 const brevo = new Brevo.TransactionalEmailsApi();
-brevo.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
+brevo.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY;
 
 async function sendOtpEmail(email, otp) {
   const sendSmtpEmail = {
@@ -247,9 +249,11 @@ async function sendOtpEmail(email, otp) {
   };
   await brevo.sendTransacEmail(sendSmtpEmail);
 }
+
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
+
 
 // -------------------- AUTH HELPERS --------------------
 function authenticateToken(req, res, next) {
