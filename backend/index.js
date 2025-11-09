@@ -1,3 +1,6 @@
+// index.js — EYES Perfume API (Render) + Vercel Frontend
+// -------------------------------------------------------
+
 import express from 'express';
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
@@ -16,103 +19,156 @@ import * as AdminJSMongoose from '@adminjs/mongoose';
 // Load environment variables ASAP
 dotenv.config();
 
-// --- Mongoose Schema Definitions ---
-
-const userSchema = new mongoose.Schema({
-  firstName: { type: String, required: true },
-  lastName:  { type: String, required: true },
-  email:     { type: String, required: true, unique: true },
-  passwordHash: { type: String, required: true },
-  role: { type: String, enum: ['user', 'admin'], default: 'user' },
-}, { timestamps: true });
-const User = mongoose.model('User', userSchema);
-
-const productSchema = new mongoose.Schema({
-  name:  { type: String, required: true },
-  price: { type: Number, required: true },
-  originalPrice: Number,
-  image: String,
-  description: String,
-  category: String,
-  rating: Number,
-  isRecent: Boolean,       // renamed from isNew to avoid conflict
-  isBestseller: Boolean,
-}, { timestamps: true });
-const Product = mongoose.model('Product', productSchema);
-
-const orderItemSchema = new mongoose.Schema({
-  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
-  quantity: { type: Number, min: 1, default: 1 },
-});
-
-const orderSchema = new mongoose.Schema({
-  userId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  createdAt:{ type: Date, default: Date.now },
-  name: String,
-  address: String,
-  phone: String,
-  items: [orderItemSchema],
-}, { timestamps: true });
-const Order = mongoose.model('Order', orderSchema);
-
-const cartItemSchema = new mongoose.Schema({
-  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
-  quantity: { type: Number, min: 1, default: 1 },
-});
-
-const cartSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', unique: true },
-  items: [cartItemSchema],
-}, { timestamps: true });
-const Cart = mongoose.model('Cart', cartSchema);
-
-const reviewSchema = new mongoose.Schema({
-  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
-  userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  rating:    { type: Number, min: 1, max: 5, required: true },
-  comment:   String,
-  createdAt: { type: Date, default: Date.now },
-}, { timestamps: true });
-const Review = mongoose.model('Review', reviewSchema);
-
-// --- Main App Initialization ---
+// -------------------------------------------------------
+// Config / Constants
+// -------------------------------------------------------
 const app = express();
-
-// --- Constants ---
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'GOOGLE_CLIENT_ID_HERE';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'GOOGLE_CLIENT_SECRET_HERE';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const CORS_ORIGINS = (process.env.CORS_ORIGINS || `${FRONTEND_URL},http://localhost:5173,http://127.0.0.1:5173`)
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/perfume';
+const CORS_ORIGINS = (
+  process.env.CORS_ORIGINS ||
+  `${FRONTEND_URL},http://localhost:5173,http://127.0.0.1:5173`
+)
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-// Simple in-memory OTP store (consider Redis for prod)
-const otpStore = {};
+// In-memory OTP store (consider Redis for production)
+const otpStore = Object.create(null);
 
-// --- Database Connection ---
-const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/perfume';
-console.log('Connecting to MongoDB:', mongoUri);
-mongoose.connect(mongoUri)
+// -------------------------------------------------------
+// MongoDB Schemas
+// -------------------------------------------------------
+const userSchema = new mongoose.Schema(
+  {
+    firstName: { type: String, required: true, trim: true },
+    lastName:  { type: String, required: true, trim: true },
+    email:     { type: String, required: true, unique: true, lowercase: true, trim: true },
+    passwordHash: { type: String, required: true },
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    emailVerifiedAt: { type: Date },
+  },
+  { timestamps: true }
+);
+const User = mongoose.model('User', userSchema);
+
+const productSchema = new mongoose.Schema(
+  {
+    name:  { type: String, required: true, trim: true },
+    price: { type: Number, required: true, min: 0 },
+    originalPrice: { type: Number, min: 0 },
+    image: String,
+    images: [String],
+    description: String,
+    notes: [String],
+    brand: String,
+    category: String,
+    rating: { type: Number, min: 0, max: 5, default: 0 },
+    totalReviews: { type: Number, default: 0 },
+    isRecent: Boolean,         // renamed from isNew to avoid lib conflicts
+    isBestseller: Boolean,
+    stock: { type: Number, default: 100, min: 0 },
+    tags: [String],
+  },
+  { timestamps: true }
+);
+const Product = mongoose.model('Product', productSchema);
+
+const orderItemSchema = new mongoose.Schema(
+  {
+    perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    quantity: { type: Number, min: 1, default: 1 },
+    unitPrice: { type: Number, min: 0, default: 0 },
+  },
+  { _id: false }
+);
+
+const orderSchema = new mongoose.Schema(
+  {
+    userId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    createdAt:{ type: Date, default: Date.now },
+    name:     { type: String, required: true },
+    address:  { type: String, required: true },
+    phone:    { type: String, required: true },
+    status:   { type: String, enum: ['placed', 'processing', 'shipped', 'delivered', 'cancelled'], default: 'placed' },
+    items:    [orderItemSchema],
+    total:    { type: Number, min: 0, default: 0 },
+    paymentMethod: { type: String, default: 'cod' },
+  },
+  { timestamps: true }
+);
+const Order = mongoose.model('Order', orderSchema);
+
+const cartItemSchema = new mongoose.Schema(
+  {
+    perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    quantity: { type: Number, min: 1, default: 1 },
+  },
+  { _id: false }
+);
+
+const cartSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', unique: true },
+    items: [cartItemSchema],
+  },
+  { timestamps: true }
+);
+const Cart = mongoose.model('Cart', cartSchema);
+
+const reviewSchema = new mongoose.Schema(
+  {
+    perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    rating:    { type: Number, min: 1, max: 5, required: true },
+    comment:   { type: String, trim: true },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true }
+);
+reviewSchema.index({ perfumeId: 1, userId: 1 }, { unique: true });
+const Review = mongoose.model('Review', reviewSchema);
+
+// -------------------------------------------------------
+// DB Connect
+// -------------------------------------------------------
+console.log('Connecting to MongoDB:', MONGODB_URI);
+mongoose
+  .connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected successfully.'))
-  .catch(err => {
-    console.error('❌ MongoDB connection error:', err);
+  .catch((err) => {
+    console.error('❌ MongoDB connection failed:', err);
     process.exit(1);
   });
 
-// --- Middleware ---
-app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
+// -------------------------------------------------------
+// Middleware
+// -------------------------------------------------------
+app.use(
+  cors({
+    origin: CORS_ORIGINS,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })
+);
+app.options('*', cors()); // handle preflight
 app.use(express.json());
 app.use(passport.initialize());
 
-// --- AdminJS Setup ---
+// -------------------------------------------------------
+// AdminJS
+// -------------------------------------------------------
 AdminJS.registerAdapter({
   Resource: AdminJSMongoose.Resource,
   Database: AdminJSMongoose.Database,
 });
 
+// AdminJS resource with password hashing hooks for Users
 const admin = new AdminJS({
   resources: [
     {
@@ -132,6 +188,7 @@ const admin = new AdminJS({
                 const bcryptMod = (await import('bcrypt')).default;
                 request.payload = {
                   ...request.payload,
+                  email: request.payload.email?.toLowerCase(),
                   passwordHash: await bcryptMod.hash(request.payload.password, 10),
                   password: undefined,
                 };
@@ -145,6 +202,7 @@ const admin = new AdminJS({
                 const bcryptMod = (await import('bcrypt')).default;
                 request.payload = {
                   ...request.payload,
+                  email: request.payload.email?.toLowerCase(),
                   passwordHash: await bcryptMod.hash(request.payload.password, 10),
                   password: undefined,
                 };
@@ -165,41 +223,38 @@ const admin = new AdminJS({
   locale: {
     translations: {
       labels: {
-        Product: "Product",
-        Order: "Order",
-        Cart: "Cart",
-        Review: "Review",
-        User: "User",
+        User: 'User',
+        Product: 'Product',
+        Order: 'Order',
+        Cart: 'Cart',
+        Review: 'Review',
       },
       properties: {
-        // User
-        firstName: "First Name",
-        lastName: "Last Name",
-        email: "Email",
-        passwordHash: "Password Hash",
-        role: "Role",
-        // Product
-        name: "Name",
-        price: "Price",
-        originalPrice: "Original Price",
-        image: "Image",
-        description: "Description",
-        category: "Category",
-        rating: "Rating",
-        isRecent: "Is Recent",
-        isBestseller: "Is Bestseller",
-        // Order
-        userId: "User",
-        createdAt: "Created At",
-        address: "Address",
-        phone: "Phone",
-        items: "Items",
-        // OrderItem
-        perfumeId: "Perfume",
-        quantity: "Quantity",
-        // Cart
-        // Review
-        comment: "Comment",
+        firstName: 'First Name',
+        lastName: 'Last Name',
+        email: 'Email',
+        passwordHash: 'Password Hash',
+        role: 'Role',
+        name: 'Name',
+        price: 'Price',
+        originalPrice: 'Original Price',
+        image: 'Image',
+        images: 'Images',
+        description: 'Description',
+        category: 'Category',
+        brand: 'Brand',
+        rating: 'Rating',
+        isRecent: 'Is Recent',
+        isBestseller: 'Is Bestseller',
+        stock: 'Stock',
+        userId: 'User',
+        createdAt: 'Created At',
+        address: 'Address',
+        phone: 'Phone',
+        items: 'Items',
+        perfumeId: 'Perfume',
+        quantity: 'Quantity',
+        comment: 'Comment',
       },
     },
   },
@@ -217,25 +272,29 @@ const adminRouter = AdminJSExpress.buildAuthenticatedRouter(admin, {
 });
 app.use(admin.options.rootPath, adminRouter);
 
-// --- Nodemailer (SMTP) ---
+// -------------------------------------------------------
+// Nodemailer (SMTP) — Gmail App Password
+// -------------------------------------------------------
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: Number(process.env.SMTP_PORT) || 587,
-  secure: String(process.env.SMTP_SECURE).toLowerCase() === 'true', // false -> STARTTLS on 587
+  secure: String(process.env.SMTP_SECURE).toLowerCase() === 'true', // false -> STARTTLS
   auth: {
     user: process.env.SMTP_USERNAME || process.env.EMAIL_USER,
     pass: process.env.SMTP_PASSWORD || process.env.EMAIL_PASS,
   },
 });
 
-// optional: verify SMTP on boot (logs only)
-transporter.verify().then(() => {
-  console.log('📬 SMTP server is ready to take messages');
-}).catch(err => {
-  console.warn('⚠️ SMTP verify failed (emails may not send):', err?.message || err);
-});
+transporter
+  .verify()
+  .then(() => console.log('📬 SMTP server is ready to send messages'))
+  .catch((err) => console.warn('⚠️ SMTP verify failed:', err?.message || err));
 
-function sendOtpEmail(email, otp) {
+function generateOtp() {
+  return (Math.floor(100000 + Math.random() * 900000)).toString();
+}
+
+async function sendOtpEmail(email, otp) {
   return transporter.sendMail({
     from: process.env.EMAIL_FROM || process.env.SMTP_USERNAME || process.env.EMAIL_USER,
     to: email,
@@ -244,29 +303,36 @@ function sendOtpEmail(email, otp) {
   });
 }
 
-function generateOtp() {
-  return (Math.floor(100000 + Math.random() * 900000)).toString();
-}
-
-// --- Auth Middleware ---
+// -------------------------------------------------------
+// Auth Helpers
+// -------------------------------------------------------
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'] || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return res.sendStatus(401);
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, payload) => {
     if (err) return res.sendStatus(403);
-    req.user = user;
+    req.user = payload;
     next();
   });
 }
 
-// --- Health check ---
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  next();
+}
+
+// -------------------------------------------------------
+// Health
+// -------------------------------------------------------
 app.get('/', (req, res) => {
-  res.send('Perfume backend is running!');
+  res.send('🚀 EYES Perfume backend is running!');
 });
 
-// --- Auth & OTP Routes ---
+// -------------------------------------------------------
+// Auth + OTP
+// -------------------------------------------------------
 app.post('/api/signup', async (req, res) => {
   try {
     const { firstName, lastName, email, password, confirmPassword } = req.body;
@@ -277,13 +343,16 @@ app.post('/api/signup', async (req, res) => {
       return res.status(400).json({ error: 'Passwords do not match.' });
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered.' });
-    }
+    const existing = await User.findOne({ email: email.toLowerCase() });
+    if (existing) return res.status(400).json({ error: 'Email already registered.' });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const newUser = new User({ firstName, lastName, email: email.toLowerCase(), passwordHash });
+    const newUser = new User({
+      firstName,
+      lastName,
+      email: email.toLowerCase(),
+      passwordHash,
+    });
     await newUser.save();
 
     const otp = generateOtp();
@@ -292,14 +361,14 @@ app.post('/api/signup', async (req, res) => {
 
     res.json({ message: 'Signup successful, OTP sent to email.' });
   } catch (e) {
-    console.error("Signup Error:", e);
+    console.error('Signup Error:', e);
     res.status(500).json({ error: 'Server error.' });
   }
 });
 
 app.post('/api/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
@@ -320,81 +389,112 @@ app.post('/api/login', async (req, res) => {
 
     res.json({ message: 'OTP sent to your email to complete login.' });
   } catch (e) {
-    console.error("Login Error:", e);
+    console.error('Login Error:', e);
+    res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+app.post('/api/resend-otp', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'Email is required.' });
+
+    const entry = otpStore[email.toLowerCase()];
+    if (!entry) return res.status(400).json({ error: 'No pending OTP session.' });
+
+    const otp = generateOtp();
+    otpStore[email.toLowerCase()] = { ...entry, otp, expires: Date.now() + 5 * 60 * 1000 };
+    await sendOtpEmail(email, otp);
+
+    res.json({ message: 'OTP resent.' });
+  } catch (e) {
+    console.error('Resend OTP Error:', e);
     res.status(500).json({ error: 'Server error.' });
   }
 });
 
 app.post('/api/verify-otp', (req, res) => {
-  const { email, otp } = req.body;
-  const entry = otpStore[(email || '').toLowerCase()];
+  const { email, otp } = req.body || {};
+  const key = (email || '').toLowerCase();
+  const entry = otpStore[key];
 
   if (!entry) return res.status(400).json({ error: 'Invalid or expired OTP session.' });
   if (Date.now() > entry.expires) {
-    delete otpStore[(email || '').toLowerCase()];
+    delete otpStore[key];
     return res.status(400).json({ error: 'OTP expired.' });
   }
   if (entry.otp !== otp) return res.status(400).json({ error: 'Invalid OTP.' });
 
   const { user } = entry;
-  const token = jwt.sign(
-    { id: user._id, email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
+  const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
-  delete otpStore[(email || '').toLowerCase()];
+  delete otpStore[key];
   res.json({
     token,
-    user: { id: user._id, email: user.email, firstName: user.firstName, role: user.role }
+    user: { id: user._id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role },
   });
 });
 
-// --- Google OAuth ---
-passport.use(new GoogleStrategy({
-  clientID: GOOGLE_CLIENT_ID,
-  clientSecret: GOOGLE_CLIENT_SECRET,
-  callbackURL: '/auth/google/callback',
-}, async (accessToken, refreshToken, profile, done) => {
-  try {
-    const email = profile.emails && profile.emails[0].value?.toLowerCase();
-    if (!email) return done(null, false, { message: 'No email from Google' });
+// -------------------------------------------------------
+// Google OAuth
+// -------------------------------------------------------
+passport.use(
+  new GoogleStrategy(
+    {
+      clientID: GOOGLE_CLIENT_ID,
+      clientSecret: GOOGLE_CLIENT_SECRET,
+      callbackURL: '/auth/google/callback',
+    },
+    async (accessToken, refreshToken, profile, done) => {
+      try {
+        const email = profile.emails && profile.emails[0].value?.toLowerCase();
+        if (!email) return done(null, false, { message: 'No email from Google' });
 
-    let user = await User.findOne({ email });
-    if (user) return done(null, user);
+        let user = await User.findOne({ email });
+        if (user) return done(null, user);
 
-    const newUser = new User({
-      firstName: profile.name?.givenName || '',
-      lastName:  profile.name?.familyName || '',
-      email,
-      passwordHash: await bcrypt.hash(Math.random().toString(36), 10),
-    });
-    await newUser.save();
-    done(null, newUser);
-  } catch (err) {
-    done(err);
-  }
-}));
+        const newUser = new User({
+          firstName: profile.name?.givenName || '',
+          lastName: profile.name?.familyName || '',
+          email,
+          passwordHash: await bcrypt.hash(Math.random().toString(36), 10),
+          emailVerifiedAt: new Date(),
+        });
+        await newUser.save();
+        done(null, newUser);
+      } catch (err) {
+        done(err);
+      }
+    }
+  )
+);
 
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
 app.get(
   '/auth/google/callback',
   passport.authenticate('google', { session: false, failureRedirect: `${FRONTEND_URL}/login` }),
   (req, res) => {
     const user = req.user;
     const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    const redirectUrl = `${FRONTEND_URL}/login-success?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify({
-      _id: user._id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-    }))}`;
+    const redirectUrl = `${FRONTEND_URL}/login-success?token=${encodeURIComponent(
+      token
+    )}&user=${encodeURIComponent(
+      JSON.stringify({
+        _id: user._id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+      })
+    )}`;
     res.redirect(redirectUrl);
   }
 );
 
-// --- User Profile Routes ---
+// -------------------------------------------------------
+// Profile
+// -------------------------------------------------------
 app.get('/api/profile', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-passwordHash');
@@ -405,11 +505,41 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// --- Product Routes ---
+app.put('/api/profile', authenticateToken, async (req, res) => {
+  try {
+    const { firstName, lastName } = req.body || {};
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: { firstName, lastName } },
+      { new: true, select: '-passwordHash' }
+    );
+    res.json(user);
+  } catch {
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// -------------------------------------------------------
+// Products
+// -------------------------------------------------------
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await Product.find({});
-    res.json(products);
+    const { q, category, brand, minPrice, maxPrice, page = 1, limit = 50 } = req.query;
+    const filter = {};
+    if (q) filter.name = { $regex: String(q), $options: 'i' };
+    if (category) filter.category = String(category);
+    if (brand) filter.brand = String(brand);
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
+    const skip = (Number(page) - 1) * Number(limit);
+    const [items, total] = await Promise.all([
+      Product.find(filter).skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
+      Product.countDocuments(filter),
+    ]);
+    res.json({ items, total, page: Number(page), limit: Number(limit) });
   } catch {
     res.status(500).json({ error: 'Failed to fetch products' });
   }
@@ -417,24 +547,56 @@ app.get('/api/products', async (req, res) => {
 
 app.get('/api/products/:id', async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json(product);
+    const p = await Product.findById(req.params.id);
+    if (!p) return res.status(404).json({ error: 'Product not found' });
+    res.json(p);
   } catch {
     res.status(500).json({ error: 'Failed to fetch product' });
   }
 });
 
-// --- Cart Routes ---
+// Admin-only CRUD for products (optional; comment out if not needed)
+app.post('/api/admin/products', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const p = await Product.create(req.body);
+    res.json(p);
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to create product' });
+  }
+});
+
+app.put('/api/admin/products/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const p = await Product.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+    res.json(p);
+  } catch {
+    res.status(500).json({ error: 'Failed to update product' });
+  }
+});
+
+app.delete('/api/admin/products/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await Product.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to delete product' });
+  }
+});
+
+// -------------------------------------------------------
+// Cart
+// -------------------------------------------------------
 app.get('/api/cart', authenticateToken, async (req, res) => {
   try {
     let cart = await Cart.findOne({ userId: req.user.id }).populate('items.perfumeId');
     if (!cart) return res.json([]);
-    res.json(cart.items.map(item => ({
-      perfumeId: item.perfumeId._id,
-      product: item.perfumeId,
-      quantity: item.quantity,
-    })));
+    // return list with embedded product info
+    const out = cart.items.map((it) => ({
+      perfumeId: it.perfumeId?._id,
+      product: it.perfumeId,
+      quantity: it.quantity,
+    }));
+    res.json(out);
   } catch {
     res.status(500).json({ error: 'Failed to fetch cart' });
   }
@@ -442,19 +604,15 @@ app.get('/api/cart', authenticateToken, async (req, res) => {
 
 app.post('/api/cart', authenticateToken, async (req, res) => {
   try {
-    const { perfumeId, quantity } = req.body;
+    const { perfumeId, quantity } = req.body || {};
     if (!perfumeId || !quantity || quantity < 1) {
       return res.status(400).json({ error: 'Invalid perfume or quantity' });
     }
     let cart = await Cart.findOne({ userId: req.user.id });
     if (!cart) cart = new Cart({ userId: req.user.id, items: [] });
-
-    const idx = cart.items.findIndex(item => item.perfumeId.toString() === perfumeId);
-    if (idx > -1) {
-      cart.items[idx].quantity = quantity;
-    } else {
-      cart.items.push({ perfumeId, quantity });
-    }
+    const idx = cart.items.findIndex((it) => it.perfumeId.toString() === String(perfumeId));
+    if (idx > -1) cart.items[idx].quantity = quantity;
+    else cart.items.push({ perfumeId, quantity });
     await cart.save();
     res.json({ success: true });
   } catch {
@@ -467,7 +625,7 @@ app.delete('/api/cart/:perfumeId', authenticateToken, async (req, res) => {
     const { perfumeId } = req.params;
     let cart = await Cart.findOne({ userId: req.user.id });
     if (!cart) return res.json({ success: true });
-    cart.items = cart.items.filter(item => item.perfumeId.toString() !== perfumeId);
+    cart.items = cart.items.filter((it) => it.perfumeId.toString() !== String(perfumeId));
     await cart.save();
     res.json({ success: true });
   } catch {
@@ -475,10 +633,25 @@ app.delete('/api/cart/:perfumeId', authenticateToken, async (req, res) => {
   }
 });
 
-// --- Order Routes ---
+app.delete('/api/cart', authenticateToken, async (req, res) => {
+  try {
+    let cart = await Cart.findOne({ userId: req.user.id });
+    if (cart) {
+      cart.items = [];
+      await cart.save();
+    }
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to clear cart' });
+  }
+});
+
+// -------------------------------------------------------
+// Orders
+// -------------------------------------------------------
 app.post('/api/checkout', authenticateToken, async (req, res) => {
   try {
-    const { name, address, phone, paymentMethod } = req.body; // paymentMethod placeholder
+    const { name, address, phone, paymentMethod } = req.body || {};
     if (!name || !address || !phone) {
       return res.status(400).json({ error: 'Missing order details' });
     }
@@ -486,21 +659,34 @@ app.post('/api/checkout', authenticateToken, async (req, res) => {
     if (!cart || cart.items.length === 0) {
       return res.status(400).json({ error: 'Cart is empty' });
     }
+    const items = cart.items.map((it) => ({
+      perfumeId: it.perfumeId._id,
+      quantity: it.quantity,
+      unitPrice: it.perfumeId.price,
+    }));
+    const total = items.reduce((sum, it) => sum + it.quantity * (it.unitPrice || 0), 0);
     const order = new Order({
       userId: req.user.id,
       name,
       address,
       phone,
-      items: cart.items.map(item => ({
-        perfumeId: item.perfumeId._id,
-        quantity: item.quantity,
-      })),
+      paymentMethod: paymentMethod || 'cod',
+      items,
+      total,
     });
     await order.save();
+    // Optionally reduce stock
+    for (const it of cart.items) {
+      if (it.perfumeId && typeof it.perfumeId.stock === 'number') {
+        await Product.findByIdAndUpdate(it.perfumeId._id, { $inc: { stock: -it.quantity } });
+      }
+    }
     cart.items = [];
     await cart.save();
+
     res.json({ success: true, orderId: order._id });
-  } catch {
+  } catch (e) {
+    console.error('Checkout Error:', e);
     res.status(500).json({ error: 'Failed to place order' });
   }
 });
@@ -516,34 +702,41 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
   }
 });
 
-// --- Review Routes ---
+app.get('/api/orders/:id', authenticateToken, async (req, res) => {
+  try {
+    const order = await Order.findOne({ _id: req.params.id, userId: req.user.id }).populate('items.perfumeId');
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch order' });
+  }
+});
+
+// -------------------------------------------------------
+// Reviews
+// -------------------------------------------------------
 app.post('/api/reviews', authenticateToken, async (req, res) => {
   try {
-    const { perfumeId, rating, comment } = req.body;
+    const { perfumeId, rating, comment } = req.body || {};
     if (!perfumeId || rating === undefined || rating < 1 || rating > 5) {
       return res.status(400).json({ error: 'Invalid review details.' });
     }
 
-    const existingReview = await Review.findOne({ perfumeId, userId: req.user.id });
-    if (existingReview) {
-      return res.status(400).json({ error: 'You have already reviewed this product.' });
-    }
+    const existing = await Review.findOne({ perfumeId, userId: req.user.id });
+    if (existing) return res.status(400).json({ error: 'You have already reviewed this product.' });
 
-    const newReview = new Review({ perfumeId, userId: req.user.id, rating, comment });
-    await newReview.save();
+    const review = new Review({ perfumeId, userId: req.user.id, rating, comment });
+    await review.save();
 
     // Recalculate product rating
-    const product = await Product.findById(perfumeId);
-    if (product) {
-      const reviews = await Review.find({ perfumeId: product._id });
-      const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
-      product.rating = reviews.length > 0 ? totalRating / reviews.length : 0;
-      await product.save();
-    }
+    const reviews = await Review.find({ perfumeId });
+    const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
+    const avg = reviews.length ? totalRating / reviews.length : 0;
+    await Product.findByIdAndUpdate(perfumeId, { $set: { rating: avg, totalReviews: reviews.length } });
 
     res.json({ message: 'Review submitted successfully.' });
   } catch (e) {
-    console.error("Review Error:", e);
+    console.error('Review Error:', e);
     res.status(500).json({ error: 'Server error.' });
   }
 });
@@ -558,7 +751,9 @@ app.get('/api/reviews/:perfumeId', async (req, res) => {
   }
 });
 
-// --- Utility: Test email route (optional; remove in prod) ---
+// -------------------------------------------------------
+// Utilities
+// -------------------------------------------------------
 app.post('/api/test-email', async (req, res) => {
   try {
     const { to = process.env.ADMIN_EMAIL } = req.body || {};
@@ -574,7 +769,9 @@ app.post('/api/test-email', async (req, res) => {
   }
 });
 
-// --- Server Listen ---
+// -------------------------------------------------------
+// Start Server
+// -------------------------------------------------------
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`👨‍💻 AdminJS dashboard is available at http://localhost:${PORT}${admin.options.rootPath}`);
