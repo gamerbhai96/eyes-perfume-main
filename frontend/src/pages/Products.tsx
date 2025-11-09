@@ -11,6 +11,19 @@ import * as api from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import React from 'react';
 
+interface Product {
+  _id: string;
+  name: string;
+  description: string;
+  price: number;
+  originalPrice?: number;
+  image: string;
+  category: string;
+  rating?: number;
+  isBestseller?: boolean;
+  isRecent?: boolean;
+}
+
 const FALLBACK_IMAGES = [
   'https://images.pexels.com/photos/1961792/pexels-photo-1961792.jpeg',
   'https://images.pexels.com/photos/1961795/pexels-photo-1961795.jpeg',
@@ -23,7 +36,7 @@ const Products = React.memo(() => {
   const { token } = useAuth();
   const { addToCart } = useCart();
   const [cartMessage, setCartMessage] = useState('');
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -31,7 +44,11 @@ const Products = React.memo(() => {
     setLoading(true);
     api.getProducts()
       .then(data => { setProducts(data); setLoading(false); })
-      .catch(() => { setError('Failed to load products'); setLoading(false); });
+      .catch((err) => {
+        console.error('Error loading products:', err);
+        setError('Failed to load products. Please try again later.');
+        setLoading(false);
+      });
   }, []);
 
   const categories = [
@@ -43,13 +60,14 @@ const Products = React.memo(() => {
   ];
 
   const filteredPerfumes = products.filter(perfume => {
-    const matchesSearch = perfume.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         perfume.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch =
+      (perfume.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (perfume.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || perfume.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
-  const handleAddToCart = async (perfumeId: string) => {
+  const handleAddToCart = async (perfumeId: string): Promise<void> => {
     if (!token) {
       setCartMessage('Please log in to add to cart.');
       return;
