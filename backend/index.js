@@ -9,7 +9,7 @@ import dotenv from "dotenv";
 import AdminJS from "adminjs";
 import AdminJSExpress from "@adminjs/express";
 import * as AdminJSMongoose from "@adminjs/mongoose";
-import { Resend } from "resend";
+import * as Brevo from "@getbrevo/brevo";
 
 dotenv.config();
 
@@ -231,16 +231,21 @@ const adminRouter = AdminJSExpress.buildAuthenticatedRouter(admin, {
 });
 app.use(admin.options.rootPath, adminRouter);
 
-// -------------------- RESEND EMAIL --------------------
-const resend = new Resend(process.env.RESEND_API_KEY);
+// -------------------- BREVO EMAIL --------------------
+const brevo = new Brevo.TransactionalEmailsApi();
+brevo.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
 async function sendOtpEmail(email, otp) {
-  await resend.emails.send({
-    from: process.env.EMAIL_FROM || "EYES Perfume <noreply@eyesperfume.com>",
-    to: email,
+  const sendSmtpEmail = {
+    sender: {
+      name: "EYES Perfume",
+      email: process.env.EMAIL_FROM?.match(/<(.+)>/)?.[1] || "noreply@eyesperfume.com",
+    },
+    to: [{ email }],
     subject: "Your EYES Perfume OTP Code",
-    text: `Your OTP code is: ${otp}. It expires in 5 minutes.`,
-  });
+    htmlContent: `<p>Your OTP code is <b>${otp}</b>. It expires in 5 minutes.</p>`,
+  };
+  await brevo.sendTransacEmail(sendSmtpEmail);
 }
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -262,7 +267,8 @@ function requireAdmin(req, res, next) {
 }
 
 // -------------------- ROUTES --------------------
-app.get("/", (req, res) => res.send("🚀 EYES Perfume backend is running!"));
+// Health
+app.get("/", (req, res) => res.send("🚀 EYES Perfume backend (Brevo) is running!"));
 
 // Signup
 app.post("/api/signup", async (req, res) => {
@@ -398,7 +404,7 @@ app.put("/api/profile", authenticateToken, async (req, res) => {
   res.json(user);
 });
 
-// Products — array response to match existing frontend
+// Products
 app.get("/api/products", async (req, res) => {
   try {
     const products = await Product.find({}).sort({ createdAt: -1 });
@@ -414,7 +420,7 @@ app.get("/api/products/:id", async (req, res) => {
   res.json(product);
 });
 
-// Admin product CRUD (optional)
+// Admin product CRUD
 app.post("/api/admin/products", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const p = await Product.create(req.body);
@@ -576,11 +582,14 @@ app.get("/api/reviews/:perfumeId", async (req, res) => {
 app.post("/api/test-email", async (req, res) => {
   try {
     const { to } = req.body;
-    await resend.emails.send({
-      from: process.env.EMAIL_FROM || "EYES Perfume <noreply@eyesperfume.com>",
-      to: to || process.env.ADMIN_EMAIL,
+    await brevo.sendTransacEmail({
+      sender: {
+        name: "EYES Perfume",
+        email: process.env.EMAIL_FROM?.match(/<(.+)>/)?.[1] || "noreply@eyesperfume.com",
+      },
+      to: [{ email: to || process.env.ADMIN_EMAIL }],
       subject: "Test Email - EYES Perfume",
-      text: "This is a test email confirming your email setup works via Resend on Render.",
+      htmlContent: `<p>This is a test email confirming your Brevo setup works correctly.</p>`,
     });
     res.json({ ok: true, message: `Test email sent to ${to || process.env.ADMIN_EMAIL}` });
   } catch (err) {
