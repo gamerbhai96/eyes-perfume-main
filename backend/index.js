@@ -9,7 +9,7 @@ import dotenv from "dotenv";
 import AdminJS from "adminjs";
 import AdminJSExpress from "@adminjs/express";
 import * as AdminJSMongoose from "@adminjs/mongoose";
-import * as Brevo from "@getbrevo/brevo";
+import Brevo from "@getbrevo/brevo";
 
 dotenv.config();
 
@@ -35,7 +35,7 @@ mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => {
-    console.error("❌ MongoDB error:", err);
+    console.error("❌ MongoDB connection error:", err);
     process.exit(1);
   });
 
@@ -56,14 +56,6 @@ app.use(
 app.options("*", cors());
 app.use(express.json());
 app.use(passport.initialize());
-
-// Optional: better logs for unexpected errors
-process.on("uncaughtException", (err) =>
-  console.error("💥 Uncaught Exception:", err)
-);
-process.on("unhandledRejection", (err) =>
-  console.error("💥 Unhandled Rejection:", err)
-);
 
 // -------------------- SCHEMAS --------------------
 const userSchema = new mongoose.Schema(
@@ -113,7 +105,6 @@ const orderItemSchema = new mongoose.Schema(
 const orderSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    createdAt: { type: Date, default: Date.now },
     name: { type: String, required: true },
     address: { type: String, required: true },
     phone: { type: String, required: true },
@@ -153,7 +144,6 @@ const reviewSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     rating: { type: Number, min: 1, max: 5, required: true },
     comment: { type: String, trim: true },
-    createdAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
@@ -165,60 +155,11 @@ AdminJS.registerAdapter({
   Resource: AdminJSMongoose.Resource,
   Database: AdminJSMongoose.Database,
 });
-
 const admin = new AdminJS({
-  resources: [
-    {
-      resource: User,
-      options: {
-        properties: {
-          password: {
-            type: "string",
-            isVisible: { list: false, edit: true, filter: false, show: false, new: true },
-          },
-          passwordHash: { isVisible: false },
-        },
-        actions: {
-          new: {
-            before: async (request) => {
-              if (request.payload?.password) {
-                const bcryptMod = (await import("bcrypt")).default;
-                request.payload = {
-                  ...request.payload,
-                  email: request.payload.email?.toLowerCase(),
-                  passwordHash: await bcryptMod.hash(request.payload.password, 10),
-                  password: undefined,
-                };
-              }
-              return request;
-            },
-          },
-          edit: {
-            before: async (request) => {
-              if (request.payload?.password) {
-                const bcryptMod = (await import("bcrypt")).default;
-                request.payload = {
-                  ...request.payload,
-                  email: request.payload.email?.toLowerCase(),
-                  passwordHash: await bcryptMod.hash(request.payload.password, 10),
-                  password: undefined,
-                };
-              }
-              return request;
-            },
-          },
-        },
-      },
-    },
-    Product,
-    Order,
-    Cart,
-    Review,
-  ],
+  resources: [User, Product, Order, Cart, Review],
   rootPath: "/admin",
   branding: { companyName: "EYES Perfume Admin" },
 });
-
 const adminRouter = AdminJSExpress.buildAuthenticatedRouter(admin, {
   authenticate: async (email, password) => {
     if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
@@ -232,10 +173,8 @@ const adminRouter = AdminJSExpress.buildAuthenticatedRouter(admin, {
 app.use(admin.options.rootPath, adminRouter);
 
 // -------------------- BREVO EMAIL --------------------
-import Brevo from "@getbrevo/brevo";
-
 const brevo = new Brevo.TransactionalEmailsApi();
-brevo.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY;
+brevo.authentications["apiKey"].apiKey = process.env.BREVO_API_KEY;
 
 async function sendOtpEmail(email, otp) {
   const sendSmtpEmail = {
@@ -254,7 +193,6 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-
 // -------------------- AUTH HELPERS --------------------
 function authenticateToken(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
@@ -271,10 +209,9 @@ function requireAdmin(req, res, next) {
 }
 
 // -------------------- ROUTES --------------------
-// Health
 app.get("/", (req, res) => res.send("🚀 EYES Perfume backend (Brevo) is running!"));
 
-// Signup
+// -------------------- AUTH --------------------
 app.post("/api/signup", async (req, res) => {
   try {
     const { firstName, lastName, email, password, confirmPassword } = req.body;
@@ -287,19 +224,10 @@ app.post("/api/signup", async (req, res) => {
     if (existing) return res.status(400).json({ error: "Email already registered." });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const newUser = await User.create({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
-      passwordHash,
-    });
+    const newUser = await User.create({ firstName, lastName, email, passwordHash });
 
     const otp = generateOtp();
-    otpStore[email.toLowerCase()] = {
-      otp,
-      expires: Date.now() + 5 * 60 * 1000,
-      user: newUser,
-    };
+    otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user: newUser };
     await sendOtpEmail(email, otp);
     res.json({ message: "Signup successful, OTP sent." });
   } catch (e) {
@@ -308,7 +236,6 @@ app.post("/api/signup", async (req, res) => {
   }
 });
 
-// Login
 app.post("/api/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -317,11 +244,7 @@ app.post("/api/login", async (req, res) => {
       return res.status(400).json({ error: "Invalid credentials." });
 
     const otp = generateOtp();
-    otpStore[email.toLowerCase()] = {
-      otp,
-      expires: Date.now() + 5 * 60 * 1000,
-      user,
-    };
+    otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user };
     await sendOtpEmail(email, otp);
     res.json({ message: "OTP sent to your email." });
   } catch (e) {
@@ -330,11 +253,9 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-// Verify OTP
 app.post("/api/verify-otp", (req, res) => {
   const { email, otp } = req.body;
-  const key = (email || "").toLowerCase();
-  const entry = otpStore[key];
+  const entry = otpStore[email.toLowerCase()];
   if (!entry) return res.status(400).json({ error: "Invalid or expired OTP session." });
   if (Date.now() > entry.expires) return res.status(400).json({ error: "OTP expired." });
   if (entry.otp !== otp) return res.status(400).json({ error: "Invalid OTP." });
@@ -344,14 +265,11 @@ app.post("/api/verify-otp", (req, res) => {
     JWT_SECRET,
     { expiresIn: "7d" }
   );
-  delete otpStore[key];
-  res.json({
-    token,
-    user: { id: entry.user._id, email: entry.user.email, firstName: entry.user.firstName },
-  });
+  delete otpStore[email.toLowerCase()];
+  res.json({ token, user: entry.user });
 });
 
-// Google OAuth
+// -------------------- GOOGLE OAUTH --------------------
 passport.use(
   new GoogleStrategy(
     {
@@ -379,43 +297,37 @@ passport.use(
     }
   )
 );
+
 app.get("/auth/google", passport.authenticate("google", { scope: ["profile", "email"] }));
 app.get(
   "/auth/google/callback",
   passport.authenticate("google", { session: false, failureRedirect: `${FRONTEND_URL}/login` }),
   (req, res) => {
     const token = jwt.sign({ id: req.user._id, email: req.user.email }, JWT_SECRET, { expiresIn: "7d" });
-    const redirectUrl = `${FRONTEND_URL}/login-success?token=${encodeURIComponent(
-      token
-    )}&user=${encodeURIComponent(JSON.stringify(req.user))}`;
+    const redirectUrl = `${FRONTEND_URL}/login-success?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(req.user))}`;
     res.redirect(redirectUrl);
   }
 );
 
-// Profile
+// -------------------- PROFILE --------------------
 app.get("/api/profile", authenticateToken, async (req, res) => {
   const user = await User.findById(req.user.id).select("-passwordHash");
   if (!user) return res.status(404).json({ error: "User not found" });
   res.json(user);
 });
 app.put("/api/profile", authenticateToken, async (req, res) => {
-  const { firstName, lastName } = req.body || {};
-  const user = await User.findByIdAndUpdate(
-    req.user.id,
-    { $set: { firstName, lastName } },
-    { new: true, select: "-passwordHash" }
-  );
+  const { firstName, lastName } = req.body;
+  const user = await User.findByIdAndUpdate(req.user.id, { $set: { firstName, lastName } }, { new: true }).select("-passwordHash");
   res.json(user);
 });
 
-// Products
+// -------------------- PRODUCTS --------------------
 app.get("/api/products", async (req, res) => {
   try {
     const products = await Product.find({}).sort({ createdAt: -1 });
     res.json(products);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch products." });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch products" });
   }
 });
 app.get("/api/products/:id", async (req, res) => {
@@ -424,7 +336,7 @@ app.get("/api/products/:id", async (req, res) => {
   res.json(product);
 });
 
-// Admin product CRUD
+// -------------------- ADMIN PRODUCT CRUD --------------------
 app.post("/api/admin/products", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const p = await Product.create(req.body);
@@ -435,7 +347,7 @@ app.post("/api/admin/products", authenticateToken, requireAdmin, async (req, res
 });
 app.put("/api/admin/products/:id", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const p = await Product.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+    const p = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
     res.json(p);
   } catch {
     res.status(500).json({ error: "Failed to update product" });
@@ -450,7 +362,7 @@ app.delete("/api/admin/products/:id", authenticateToken, requireAdmin, async (re
   }
 });
 
-// Cart
+// -------------------- CART --------------------
 app.get("/api/cart", authenticateToken, async (req, res) => {
   const cart = await Cart.findOne({ userId: req.user.id }).populate("items.perfumeId");
   res.json(cart ? cart.items : []);
@@ -469,7 +381,7 @@ app.delete("/api/cart/:perfumeId", authenticateToken, async (req, res) => {
   const { perfumeId } = req.params;
   const cart = await Cart.findOne({ userId: req.user.id });
   if (cart) {
-    cart.items = cart.items.filter((i) => i.perfumeId.toString() !== String(perfumeId));
+    cart.items = cart.items.filter((i) => i.perfumeId.toString() !== perfumeId);
     await cart.save();
   }
   res.json({ success: true });
@@ -483,43 +395,34 @@ app.delete("/api/cart", authenticateToken, async (req, res) => {
   res.json({ success: true });
 });
 
-// Checkout
+// -------------------- CHECKOUT & ORDERS --------------------
 app.post("/api/checkout", authenticateToken, async (req, res) => {
   try {
-    const { name, address, phone, paymentMethod } = req.body || {};
-    if (!name || !address || !phone) {
-      return res.status(400).json({ error: "Missing order details" });
-    }
-    let cart = await Cart.findOne({ userId: req.user.id }).populate("items.perfumeId");
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({ error: "Cart is empty" });
-    }
+    const { name, address, phone, paymentMethod } = req.body;
+    const cart = await Cart.findOne({ userId: req.user.id }).populate("items.perfumeId");
+    if (!cart || !cart.items.length) return res.status(400).json({ error: "Cart is empty" });
+
     const items = cart.items.map((it) => ({
       perfumeId: it.perfumeId._id,
       quantity: it.quantity,
       unitPrice: it.perfumeId.price,
     }));
-    const total = items.reduce((sum, it) => sum + it.quantity * (it.unitPrice || 0), 0);
-    const order = new Order({
+    const total = items.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
+    const order = await Order.create({
       userId: req.user.id,
       name,
       address,
       phone,
-      paymentMethod: paymentMethod || "cod",
       items,
       total,
+      paymentMethod: paymentMethod || "cod",
     });
-    await order.save();
 
-    for (const it of cart.items) {
-      if (it.perfumeId && typeof it.perfumeId.stock === "number") {
-        await Product.findByIdAndUpdate(it.perfumeId._id, { $inc: { stock: -it.quantity } });
-      }
-    }
+    for (const it of cart.items)
+      await Product.findByIdAndUpdate(it.perfumeId._id, { $inc: { stock: -it.quantity } });
 
     cart.items = [];
     await cart.save();
-
     res.json({ success: true, orderId: order._id });
   } catch (e) {
     console.error("Checkout Error:", e);
@@ -527,62 +430,41 @@ app.post("/api/checkout", authenticateToken, async (req, res) => {
   }
 });
 
-// Orders
 app.get("/api/orders", authenticateToken, async (req, res) => {
-  try {
-    const orders = await Order.find({ userId: req.user.id })
-      .populate("items.perfumeId")
-      .sort({ createdAt: -1 });
-    res.json(orders);
-  } catch {
-    res.status(500).json({ error: "Failed to fetch orders" });
-  }
+  const orders = await Order.find({ userId: req.user.id })
+    .populate("items.perfumeId")
+    .sort({ createdAt: -1 });
+  res.json(orders);
 });
 app.get("/api/orders/:id", authenticateToken, async (req, res) => {
-  try {
-    const order = await Order.findOne({ _id: req.params.id, userId: req.user.id }).populate("items.perfumeId");
-    if (!order) return res.status(404).json({ error: "Order not found" });
-    res.json(order);
-  } catch {
-    res.status(500).json({ error: "Failed to fetch order" });
-  }
+  const order = await Order.findOne({ _id: req.params.id, userId: req.user.id }).populate("items.perfumeId");
+  if (!order) return res.status(404).json({ error: "Order not found" });
+  res.json(order);
 });
 
-// Reviews
+// -------------------- REVIEWS --------------------
 app.post("/api/reviews", authenticateToken, async (req, res) => {
   try {
-    const { perfumeId, rating, comment } = req.body || {};
-    if (!perfumeId || rating === undefined || rating < 1 || rating > 5) {
-      return res.status(400).json({ error: "Invalid review details." });
-    }
+    const { perfumeId, rating, comment } = req.body;
     const existing = await Review.findOne({ perfumeId, userId: req.user.id });
-    if (existing) return res.status(400).json({ error: "You have already reviewed this product." });
+    if (existing) return res.status(400).json({ error: "Already reviewed" });
 
-    const review = new Review({ perfumeId, userId: req.user.id, rating, comment });
-    await review.save();
-
+    await Review.create({ perfumeId, userId: req.user.id, rating, comment });
     const reviews = await Review.find({ perfumeId });
-    const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
-    const avg = reviews.length ? totalRating / reviews.length : 0;
-    await Product.findByIdAndUpdate(perfumeId, { $set: { rating: avg, totalReviews: reviews.length } });
-
-    res.json({ message: "Review submitted successfully." });
+    const avg = reviews.reduce((a, b) => a + b.rating, 0) / reviews.length;
+    await Product.findByIdAndUpdate(perfumeId, { rating: avg, totalReviews: reviews.length });
+    res.json({ message: "Review submitted" });
   } catch (e) {
-    console.error("Review Error:", e);
-    res.status(500).json({ error: "Server error." });
-  }
-});
-app.get("/api/reviews/:perfumeId", async (req, res) => {
-  try {
-    const { perfumeId } = req.params;
-    const reviews = await Review.find({ perfumeId }).populate("userId", "firstName lastName");
-    res.json(reviews);
-  } catch {
-    res.status(500).json({ error: "Failed to fetch reviews" });
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-// Utilities
+app.get("/api/reviews/:perfumeId", async (req, res) => {
+  const reviews = await Review.find({ perfumeId: req.params.perfumeId }).populate("userId", "firstName lastName");
+  res.json(reviews);
+});
+
+// -------------------- TEST EMAIL --------------------
 app.post("/api/test-email", async (req, res) => {
   try {
     const { to } = req.body;
@@ -595,10 +477,9 @@ app.post("/api/test-email", async (req, res) => {
       subject: "Test Email - EYES Perfume",
       htmlContent: `<p>This is a test email confirming your Brevo setup works correctly.</p>`,
     });
-    res.json({ ok: true, message: `Test email sent to ${to || process.env.ADMIN_EMAIL}` });
+    res.json({ ok: true, message: "Test email sent" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: err?.message || "Failed to send test email" });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
