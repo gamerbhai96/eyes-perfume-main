@@ -13,66 +13,66 @@ import AdminJS from 'adminjs';
 import AdminJSExpress from '@adminjs/express';
 import * as AdminJSMongoose from '@adminjs/mongoose';
 
-// Load environment variables right at the top
+// Load environment variables ASAP
 dotenv.config();
 
 // --- Mongoose Schema Definitions ---
 
 const userSchema = new mongoose.Schema({
   firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  lastName:  { type: String, required: true },
+  email:     { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
-});
+}, { timestamps: true });
 const User = mongoose.model('User', userSchema);
 
 const productSchema = new mongoose.Schema({
-  name: { type: String, required: true },
+  name:  { type: String, required: true },
   price: { type: Number, required: true },
   originalPrice: Number,
   image: String,
   description: String,
   category: String,
   rating: Number,
-  isRecent: Boolean, // ✅ Renamed from isNew to avoid conflict
+  isRecent: Boolean,       // renamed from isNew to avoid conflict
   isBestseller: Boolean,
-});
+}, { timestamps: true });
 const Product = mongoose.model('Product', productSchema);
 
 const orderItemSchema = new mongoose.Schema({
-  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
-  quantity: Number,
+  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+  quantity: { type: Number, min: 1, default: 1 },
 });
 
 const orderSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  createdAt: { type: Date, default: Date.now },
+  userId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  createdAt:{ type: Date, default: Date.now },
   name: String,
   address: String,
   phone: String,
   items: [orderItemSchema],
-});
+}, { timestamps: true });
 const Order = mongoose.model('Order', orderSchema);
 
 const cartItemSchema = new mongoose.Schema({
-  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
-  quantity: Number,
+  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+  quantity: { type: Number, min: 1, default: 1 },
 });
 
 const cartSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', unique: true },
   items: [cartItemSchema],
-});
+}, { timestamps: true });
 const Cart = mongoose.model('Cart', cartSchema);
 
 const reviewSchema = new mongoose.Schema({
-  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  rating: Number,
-  comment: String,
+  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+  userId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  rating:    { type: Number, min: 1, max: 5, required: true },
+  comment:   String,
   createdAt: { type: Date, default: Date.now },
-});
+}, { timestamps: true });
 const Review = mongoose.model('Review', reviewSchema);
 
 // --- Main App Initialization ---
@@ -84,11 +84,18 @@ const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || 'GOOGLE_CLIENT_ID_HERE';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'GOOGLE_CLIENT_SECRET_HERE';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || `${FRONTEND_URL},http://localhost:5173,http://127.0.0.1:5173`)
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+// Simple in-memory OTP store (consider Redis for prod)
 const otpStore = {};
 
 // --- Database Connection ---
-console.log('Connecting to MongoDB:', process.env.MONGODB_URI || 'mongodb://localhost:27017/perfume');
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/perfume')
+const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/perfume';
+console.log('Connecting to MongoDB:', mongoUri);
+mongoose.connect(mongoUri)
   .then(() => console.log('✅ MongoDB connected successfully.'))
   .catch(err => {
     console.error('❌ MongoDB connection error:', err);
@@ -96,13 +103,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/perfume')
   });
 
 // --- Middleware ---
-app.use(cors({
-  origin: [
-    'https://eyes-perfume-main.vercel.app'
-    // Added for local network frontend
-  ],
-  credentials: true
-}));
+app.use(cors({ origin: CORS_ORIGINS, credentials: true }));
 app.use(express.json());
 app.use(passport.initialize());
 
@@ -120,10 +121,7 @@ const admin = new AdminJS({
         properties: {
           password: {
             type: 'string',
-            isVisible: {
-              list: false, edit: true, filter: false, show: false,
-              new: true
-            },
+            isVisible: { list: false, edit: true, filter: false, show: false, new: true },
           },
           passwordHash: { isVisible: false },
         },
@@ -131,10 +129,10 @@ const admin = new AdminJS({
           new: {
             before: async (request) => {
               if (request.payload?.password) {
-                const bcrypt = (await import('bcrypt')).default;
+                const bcryptMod = (await import('bcrypt')).default;
                 request.payload = {
                   ...request.payload,
-                  passwordHash: await bcrypt.hash(request.payload.password, 10),
+                  passwordHash: await bcryptMod.hash(request.payload.password, 10),
                   password: undefined,
                 };
               }
@@ -144,10 +142,10 @@ const admin = new AdminJS({
           edit: {
             before: async (request) => {
               if (request.payload?.password) {
-                const bcrypt = (await import('bcrypt')).default;
+                const bcryptMod = (await import('bcrypt')).default;
                 request.payload = {
                   ...request.payload,
-                  passwordHash: await bcrypt.hash(request.payload.password, 10),
+                  passwordHash: await bcryptMod.hash(request.payload.password, 10),
                   password: undefined,
                 };
               }
@@ -160,12 +158,10 @@ const admin = new AdminJS({
     Product,
     Order,
     Cart,
-    Review
+    Review,
   ],
   rootPath: '/admin',
-  branding: {
-    companyName: 'EYES Perfume Admin',
-  },
+  branding: { companyName: 'EYES Perfume Admin' },
   locale: {
     translations: {
       labels: {
@@ -173,7 +169,7 @@ const admin = new AdminJS({
         Order: "Order",
         Cart: "Cart",
         Review: "Review",
-        User: "User"
+        User: "User",
       },
       properties: {
         // User
@@ -202,21 +198,16 @@ const admin = new AdminJS({
         perfumeId: "Perfume",
         quantity: "Quantity",
         // Cart
-        items: "Items",
         // Review
         comment: "Comment",
-      }
-    }
-  }
+      },
+    },
+  },
 });
 
 const adminRouter = AdminJSExpress.buildAuthenticatedRouter(admin, {
   authenticate: async (email, password) => {
-    // Replace with your own admin check logic or use env vars
-    if (
-      email === process.env.ADMIN_EMAIL &&
-      password === process.env.ADMIN_PASSWORD
-    ) {
+    if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
       return { email: process.env.ADMIN_EMAIL };
     }
     return null;
@@ -226,186 +217,210 @@ const adminRouter = AdminJSExpress.buildAuthenticatedRouter(admin, {
 });
 app.use(admin.options.rootPath, adminRouter);
 
-// --- Nodemailer & OTP ---
+// --- Nodemailer (SMTP) ---
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-    },
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: String(process.env.SMTP_SECURE).toLowerCase() === 'true', // false -> STARTTLS on 587
+  auth: {
+    user: process.env.SMTP_USERNAME || process.env.EMAIL_USER,
+    pass: process.env.SMTP_PASSWORD || process.env.EMAIL_PASS,
+  },
+});
+
+// optional: verify SMTP on boot (logs only)
+transporter.verify().then(() => {
+  console.log('📬 SMTP server is ready to take messages');
+}).catch(err => {
+  console.warn('⚠️ SMTP verify failed (emails may not send):', err?.message || err);
 });
 
 function sendOtpEmail(email, otp) {
-    return transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'Your EYES Perfume OTP Code',
-        text: `Your OTP code is: ${otp}. It expires in 5 minutes.`,
-    });
+  return transporter.sendMail({
+    from: process.env.EMAIL_FROM || process.env.SMTP_USERNAME || process.env.EMAIL_USER,
+    to: email,
+    subject: 'Your EYES Perfume OTP Code',
+    text: `Your OTP code is: ${otp}. It expires in 5 minutes.`,
+  });
 }
 
 function generateOtp() {
-    return (Math.floor(100000 + Math.random() * 900000)).toString();
+  return (Math.floor(100000 + Math.random() * 900000)).toString();
 }
 
 // --- Auth Middleware ---
 function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.sendStatus(401);
+  const authHeader = req.headers['authorization'] || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.sendStatus(401);
 
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.sendStatus(403);
-        req.user = user;
-        next();
-    });
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
 }
 
-// --- API and Auth Routes ---
+// --- Health check ---
 app.get('/', (req, res) => {
-    res.send('Perfume backend is running!');
+  res.send('Perfume backend is running!');
 });
 
+// --- Auth & OTP Routes ---
 app.post('/api/signup', async (req, res) => {
-    try {
-        const { firstName, lastName, email, password, confirmPassword } = req.body;
-        if (!firstName || !lastName || !email || !password || !confirmPassword) {
-            return res.status(400).json({ error: 'All fields are required.' });
-        }
-        if (password !== confirmPassword) {
-            return res.status(400).json({ error: 'Passwords do not match.' });
-        }
-
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({ error: 'Email already registered.' });
-        }
-
-        const passwordHash = await bcrypt.hash(password, 10);
-        const newUser = new User({ firstName, lastName, email, passwordHash });
-        await newUser.save();
-
-        const otp = generateOtp();
-        otpStore[email] = { otp, expires: Date.now() + 5 * 60 * 1000, user: newUser };
-        await sendOtpEmail(email, otp);
-
-        res.json({ message: 'Signup successful, OTP sent to email.' });
-
-    } catch (e) {
-        console.error("Signup Error:", e);
-        res.status(500).json({ error: 'Server error.' });
+  try {
+    const { firstName, lastName, email, password, confirmPassword } = req.body;
+    if (!firstName || !lastName || !email || !password || !confirmPassword) {
+      return res.status(400).json({ error: 'All fields are required.' });
     }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: 'Passwords do not match.' });
+    }
+
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const newUser = new User({ firstName, lastName, email: email.toLowerCase(), passwordHash });
+    await newUser.save();
+
+    const otp = generateOtp();
+    otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user: newUser };
+    await sendOtpEmail(email, otp);
+
+    res.json({ message: 'Signup successful, OTP sent to email.' });
+  } catch (e) {
+    console.error("Signup Error:", e);
+    res.status(500).json({ error: 'Server error.' });
+  }
 });
 
 app.post('/api/login', async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ error: 'Email and password are required.' });
-        }
-
-        const user = await User.findOne({ email });
-        if (!user || !user.passwordHash) {
-            return res.status(400).json({ error: 'Invalid email or password.' });
-        }
-
-        const match = await bcrypt.compare(password, user.passwordHash);
-        if (!match) {
-            return res.status(400).json({ error: 'Invalid email or password.' });
-        }
-
-        const otp = generateOtp();
-        otpStore[email] = { otp, expires: Date.now() + 5 * 60 * 1000, user };
-        await sendOtpEmail(email, otp);
-
-        res.json({ message: 'OTP sent to your email to complete login.' });
-    } catch (e) {
-        console.error("Login Error:", e);
-        res.status(500).json({ error: 'Server error.' });
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
     }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user || !user.passwordHash) {
+      return res.status(400).json({ error: 'Invalid email or password.' });
+    }
+
+    const match = await bcrypt.compare(password, user.passwordHash);
+    if (!match) {
+      return res.status(400).json({ error: 'Invalid email or password.' });
+    }
+
+    const otp = generateOtp();
+    otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user };
+    await sendOtpEmail(email, otp);
+
+    res.json({ message: 'OTP sent to your email to complete login.' });
+  } catch (e) {
+    console.error("Login Error:", e);
+    res.status(500).json({ error: 'Server error.' });
+  }
 });
 
 app.post('/api/verify-otp', (req, res) => {
-    const { email, otp } = req.body;
-    const entry = otpStore[email];
+  const { email, otp } = req.body;
+  const entry = otpStore[(email || '').toLowerCase()];
 
-    if (!entry) return res.status(400).json({ error: 'Invalid or expired OTP session.' });
-    if (Date.now() > entry.expires) {
-        delete otpStore[email];
-        return res.status(400).json({ error: 'OTP expired.' });
-    }
-    if (entry.otp !== otp) return res.status(400).json({ error: 'Invalid OTP.' });
+  if (!entry) return res.status(400).json({ error: 'Invalid or expired OTP session.' });
+  if (Date.now() > entry.expires) {
+    delete otpStore[(email || '').toLowerCase()];
+    return res.status(400).json({ error: 'OTP expired.' });
+  }
+  if (entry.otp !== otp) return res.status(400).json({ error: 'Invalid OTP.' });
 
-    const { user } = entry;
-    const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+  const { user } = entry;
+  const token = jwt.sign(
+    { id: user._id, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
 
-    delete otpStore[email];
-    res.json({ token, user: { id: user._id, email: user.email, firstName: user.firstName, role: user.role } });
+  delete otpStore[(email || '').toLowerCase()];
+  res.json({
+    token,
+    user: { id: user._id, email: user.email, firstName: user.firstName, role: user.role }
+  });
 });
-
 
 // --- Google OAuth ---
 passport.use(new GoogleStrategy({
-    clientID: GOOGLE_CLIENT_ID,
-    clientSecret: GOOGLE_CLIENT_SECRET,
-    callbackURL: '/auth/google/callback',
+  clientID: GOOGLE_CLIENT_ID,
+  clientSecret: GOOGLE_CLIENT_SECRET,
+  callbackURL: '/auth/google/callback',
 }, async (accessToken, refreshToken, profile, done) => {
-    try {
-        const email = profile.emails && profile.emails[0].value;
-        if (!email) return done(null, false, { message: 'No email from Google' });
+  try {
+    const email = profile.emails && profile.emails[0].value?.toLowerCase();
+    if (!email) return done(null, false, { message: 'No email from Google' });
 
-        let user = await User.findOne({ email });
-        if (user) return done(null, user);
+    let user = await User.findOne({ email });
+    if (user) return done(null, user);
 
-        const newUser = new User({
-            firstName: profile.name.givenName || '',
-            lastName: profile.name.familyName || '',
-            email: email,
-            passwordHash: await bcrypt.hash(Math.random().toString(36), 10),
-        });
-        await newUser.save();
-        done(null, newUser);
-    } catch (err) {
-        done(err);
-    }
+    const newUser = new User({
+      firstName: profile.name?.givenName || '',
+      lastName:  profile.name?.familyName || '',
+      email,
+      passwordHash: await bcrypt.hash(Math.random().toString(36), 10),
+    });
+    await newUser.save();
+    done(null, newUser);
+  } catch (err) {
+    done(err);
+  }
 }));
 
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-app.get('/auth/google/callback', passport.authenticate('google', { session: false, failureRedirect: `${FRONTEND_URL}/login` }), (req, res) => {
+app.get(
+  '/auth/google/callback',
+  passport.authenticate('google', { session: false, failureRedirect: `${FRONTEND_URL}/login` }),
+  (req, res) => {
     const user = req.user;
     const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    const redirectUrl = `${FRONTEND_URL}/login-success?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(user))}`;
+    const redirectUrl = `${FRONTEND_URL}/login-success?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify({
+      _id: user._id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+    }))}`;
     res.redirect(redirectUrl);
-});
+  }
+);
 
 // --- User Profile Routes ---
 app.get('/api/profile', authenticateToken, async (req, res) => {
-    try {
-        const user = await User.findById(req.user.id).select('-passwordHash');
-        if (!user) return res.status(404).json({ error: 'User not found' });
-        res.json(user);
-    } catch (error) {
-        res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    const user = await User.findById(req.user.id).select('-passwordHash');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch {
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // --- Product Routes ---
 app.get('/api/products', async (req, res) => {
-    try {
-        const products = await Product.find({});
-        res.json(products);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch products' });
-    }
+  try {
+    const products = await Product.find({});
+    res.json(products);
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch products' });
+  }
 });
 
-// --- Single Product Route ---
 app.get('/api/products/:id', async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ error: 'Product not found' });
     res.json(product);
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: 'Failed to fetch product' });
   }
 });
@@ -415,13 +430,12 @@ app.get('/api/cart', authenticateToken, async (req, res) => {
   try {
     let cart = await Cart.findOne({ userId: req.user.id }).populate('items.perfumeId');
     if (!cart) return res.json([]);
-    // Return cart items with product details
     res.json(cart.items.map(item => ({
       perfumeId: item.perfumeId._id,
       product: item.perfumeId,
-      quantity: item.quantity
+      quantity: item.quantity,
     })));
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to fetch cart' });
   }
 });
@@ -433,9 +447,8 @@ app.post('/api/cart', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid perfume or quantity' });
     }
     let cart = await Cart.findOne({ userId: req.user.id });
-    if (!cart) {
-      cart = new Cart({ userId: req.user.id, items: [] });
-    }
+    if (!cart) cart = new Cart({ userId: req.user.id, items: [] });
+
     const idx = cart.items.findIndex(item => item.perfumeId.toString() === perfumeId);
     if (idx > -1) {
       cart.items[idx].quantity = quantity;
@@ -444,7 +457,7 @@ app.post('/api/cart', authenticateToken, async (req, res) => {
     }
     await cart.save();
     res.json({ success: true });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to update cart' });
   }
 });
@@ -457,7 +470,7 @@ app.delete('/api/cart/:perfumeId', authenticateToken, async (req, res) => {
     cart.items = cart.items.filter(item => item.perfumeId.toString() !== perfumeId);
     await cart.save();
     res.json({ success: true });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to remove item from cart' });
   }
 });
@@ -465,7 +478,7 @@ app.delete('/api/cart/:perfumeId', authenticateToken, async (req, res) => {
 // --- Order Routes ---
 app.post('/api/checkout', authenticateToken, async (req, res) => {
   try {
-    const { name, address, phone, paymentMethod } = req.body;
+    const { name, address, phone, paymentMethod } = req.body; // paymentMethod placeholder
     if (!name || !address || !phone) {
       return res.status(400).json({ error: 'Missing order details' });
     }
@@ -480,72 +493,89 @@ app.post('/api/checkout', authenticateToken, async (req, res) => {
       phone,
       items: cart.items.map(item => ({
         perfumeId: item.perfumeId._id,
-        quantity: item.quantity
-      }))
+        quantity: item.quantity,
+      })),
     });
     await order.save();
-    // Clear cart
     cart.items = [];
     await cart.save();
     res.json({ success: true, orderId: order._id });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to place order' });
   }
 });
 
 app.get('/api/orders', authenticateToken, async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.id }).populate('items.perfumeId').sort({ createdAt: -1 });
+    const orders = await Order.find({ userId: req.user.id })
+      .populate('items.perfumeId')
+      .sort({ createdAt: -1 });
     res.json(orders);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
 });
 
 // --- Review Routes ---
 app.post('/api/reviews', authenticateToken, async (req, res) => {
-    try {
-        const { perfumeId, rating, comment } = req.body;
-        if (!perfumeId || rating === undefined || rating < 1 || rating > 5) {
-            return res.status(400).json({ error: 'Invalid review details.' });
-        }
-
-        const existingReview = await Review.findOne({ perfumeId, userId: req.user.id });
-        if (existingReview) {
-            return res.status(400).json({ error: 'You have already reviewed this product.' });
-        }
-
-        const newReview = new Review({ perfumeId, userId: req.user.id, rating, comment });
-        await newReview.save();
-
-        // Recalculate product rating
-        const product = await Product.findById(perfumeId);
-        if (product) {
-            const reviews = await Review.find({ perfumeId: product._id });
-            const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
-            product.rating = reviews.length > 0 ? totalRating / reviews.length : 0;
-            await product.save();
-        }
-
-        res.json({ message: 'Review submitted successfully.' });
-    } catch (e) {
-        console.error("Review Error:", e);
-        res.status(500).json({ error: 'Server error.' });
+  try {
+    const { perfumeId, rating, comment } = req.body;
+    if (!perfumeId || rating === undefined || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Invalid review details.' });
     }
+
+    const existingReview = await Review.findOne({ perfumeId, userId: req.user.id });
+    if (existingReview) {
+      return res.status(400).json({ error: 'You have already reviewed this product.' });
+    }
+
+    const newReview = new Review({ perfumeId, userId: req.user.id, rating, comment });
+    await newReview.save();
+
+    // Recalculate product rating
+    const product = await Product.findById(perfumeId);
+    if (product) {
+      const reviews = await Review.find({ perfumeId: product._id });
+      const totalRating = reviews.reduce((sum, r) => sum + r.rating, 0);
+      product.rating = reviews.length > 0 ? totalRating / reviews.length : 0;
+      await product.save();
+    }
+
+    res.json({ message: 'Review submitted successfully.' });
+  } catch (e) {
+    console.error("Review Error:", e);
+    res.status(500).json({ error: 'Server error.' });
+  }
 });
 
 app.get('/api/reviews/:perfumeId', async (req, res) => {
-    try {
-        const { perfumeId } = req.params;
-        const reviews = await Review.find({ perfumeId }).populate('userId', 'firstName lastName');
-        res.json(reviews);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch reviews' });
-    }
+  try {
+    const { perfumeId } = req.params;
+    const reviews = await Review.find({ perfumeId }).populate('userId', 'firstName lastName');
+    res.json(reviews);
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch reviews' });
+  }
+});
+
+// --- Utility: Test email route (optional; remove in prod) ---
+app.post('/api/test-email', async (req, res) => {
+  try {
+    const { to = process.env.ADMIN_EMAIL } = req.body || {};
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM || process.env.SMTP_USERNAME || process.env.EMAIL_USER,
+      to,
+      subject: 'Test Email - EYES Perfume',
+      text: 'This is a test email confirming your SMTP configuration works.',
+    });
+    res.json({ ok: true, message: `Test email sent to ${to}` });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to send test email' });
+  }
 });
 
 // --- Server Listen ---
 app.listen(PORT, () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
-    console.log(`👨‍💻 AdminJS dashboard is available at http://localhost:${PORT}${admin.options.rootPath}`);
+  console.log(`🚀 Server is running on port ${PORT}`);
+  console.log(`👨‍💻 AdminJS dashboard is available at http://localhost:${PORT}${admin.options.rootPath}`);
 });
