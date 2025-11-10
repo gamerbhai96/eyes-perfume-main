@@ -1,5 +1,5 @@
 // ============================================================================
-// EYES PERFUME BACKEND — Production Ready
+// EYES PERFUME BACKEND — Production Ready (FIXED CART)
 // Features:
 //  • Login/Signup with Brevo OTP
 //  • JWT Auth
@@ -7,7 +7,7 @@
 //  • AdminJS Dashboard
 //  • Product + Cart + Checkout + Orders + Reviews
 //  • CORS fixed for Render + Vercel
-//  • Proper product populate in Cart (cart now shows perfumes)
+//  • FIXED: Add to cart function now working properly
 // ============================================================================
 
 import express from "express";
@@ -309,81 +309,266 @@ app.post("/api/verify-otp", (req, res) => {
 
 // -------------------- PRODUCTS --------------------
 app.get("/api/products", async (_, res) => {
-  const products = await Product.find().sort({ createdAt: -1 });
-  res.json(products);
-});
-app.get("/api/products/:id", async (req, res) => {
-  const p = await Product.findById(req.params.id);
-  if (!p) return res.status(404).json({ error: "Not found" });
-  res.json(p);
+  try {
+    const products = await Product.find().sort({ createdAt: -1 });
+    res.json(products);
+  } catch (err) {
+    console.error("❌ Products GET error:", err);
+    res.status(500).json({ error: "Failed to fetch products" });
+  }
 });
 
-// -------------------- CART (FIXED POPULATION) --------------------
+app.get("/api/products/:id", async (req, res) => {
+  try {
+    const p = await Product.findById(req.params.id);
+    if (!p) return res.status(404).json({ error: "Product not found" });
+    res.json(p);
+  } catch (err) {
+    console.error("❌ Product GET error:", err);
+    res.status(500).json({ error: "Failed to fetch product" });
+  }
+});
+
+// -------------------- CART (FULLY FIXED) --------------------
 const cartRouter = express.Router();
 
-// Fetch cart with product details
+// GET - Fetch cart with product details
 cartRouter.get("/", authenticateToken, async (req, res) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user.id }).populate({
+    console.log("🛒 Fetching cart for user:", req.user.id);
+    
+    let cart = await Cart.findOne({ userId: req.user.id }).populate({
       path: "items.perfumeId",
       model: "Product",
-      select: "name price image",
+      select: "name price image brand stock",
     });
 
-    if (!cart || !cart.items.length) return res.json({ items: [], total: 0 });
+    if (!cart || !cart.items.length) {
+      console.log("🛒 Cart is empty");
+      return res.json({ items: [], total: 0 });
+    }
 
-    const items = cart.items
+    // Filter out items where product was deleted
+    const validItems = cart.items.filter((i) => i.perfumeId);
+    
+    const items = validItems.map((i) => ({
+      id: i.perfumeId._id,
+      name: i.perfumeId.name,
+      image: i.perfumeId.image,
+      price: i.perfumeId.price,
+      brand: i.perfumeId.brand,
+      stock: i.perfumeId.stock,
+      quantity: i.quantity,
+      subtotal: i.quantity * i.perfumeId.price,
+    }));
+
+    const total = items.reduce((sum, i) => sum + i.subtotal, 0);
+    
+    console.log(`✅ Cart loaded: ${items.length} items, total: ₹${total}`);
+    res.json({ items, total });
+  } catch (err) {
+    console.error("❌ Cart GET Error:", err);
+    res.status(500).json({ error: "Failed to load cart" });
+  }
+});
+
+// POST - Add or update item in cart
+cartRouter.post("/", authenticateToken, async (req, res) => {
+  try {
+    const { perfumeId, quantity } = req.body;
+    
+    console.log("🛒 Add to cart request:", { perfumeId, quantity, userId: req.user.id });
+
+    // Validate input
+    if (!perfumeId) {
+      return res.status(400).json({ error: "Product ID is required" });
+    }
+    
+    if (!quantity || quantity < 1) {
+      return res.status(400).json({ error: "Quantity must be at least 1" });
+    }
+
+    // Verify product exists
+    const product = await Product.findById(perfumeId);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Check stock
+    if (product.stock < quantity) {
+      return res.status(400).json({ 
+        error: `Only ${product.stock} items available in stock` 
+      });
+    }
+
+    // Find or create cart
+    let cart = await Cart.findOne({ userId: req.user.id });
+    
+    if (!cart) {
+      console.log("🛒 Creating new cart for user:", req.user.id);
+      cart = new Cart({ 
+        userId: req.user.id, 
+        items: [] 
+      });
+    }
+
+    // Check if item already exists in cart
+    const existingItemIndex = cart.items.findIndex(
+      (item) => item.perfumeId.toString() === perfumeId.toString()
+    );
+
+    if (existingItemIndex > -1) {
+      // Update existing item quantity
+      const newQuantity = cart.items[existingItemIndex].quantity + quantity;
+      
+      if (newQuantity > product.stock) {
+        return res.status(400).json({ 
+          error: `Cannot add more. Only ${product.stock} items available in stock` 
+        });
+      }
+      
+      cart.items[existingItemIndex].quantity = newQuantity;
+      console.log(`🛒 Updated quantity for ${product.name}: ${newQuantity}`);
+    } else {
+      // Add new item to cart
+      cart.items.push({ 
+        perfumeId: perfumeId, 
+        quantity: quantity 
+      });
+      console.log(`🛒 Added new item to cart: ${product.name} (qty: ${quantity})`);
+    }
+
+    await cart.save();
+    
+    // Return updated cart
+    const updatedCart = await Cart.findOne({ userId: req.user.id }).populate({
+      path: "items.perfumeId",
+      model: "Product",
+      select: "name price image brand stock",
+    });
+
+    const items = updatedCart.items
       .filter((i) => i.perfumeId)
       .map((i) => ({
         id: i.perfumeId._id,
         name: i.perfumeId.name,
         image: i.perfumeId.image,
         price: i.perfumeId.price,
+        brand: i.perfumeId.brand,
+        stock: i.perfumeId.stock,
         quantity: i.quantity,
         subtotal: i.quantity * i.perfumeId.price,
       }));
 
     const total = items.reduce((sum, i) => sum + i.subtotal, 0);
-    res.json({ items, total });
+
+    console.log("✅ Cart updated successfully");
+    res.json({ 
+      success: true, 
+      message: "Item added to cart",
+      cart: { items, total }
+    });
   } catch (err) {
-    console.error("🛒 Cart GET Error:", err);
-    res.status(500).json({ error: "Failed to load cart" });
+    console.error("❌ Cart POST Error:", err);
+    res.status(500).json({ error: "Failed to add item to cart" });
   }
 });
 
-// Add/Update
-cartRouter.post("/", authenticateToken, async (req, res) => {
-  const { perfumeId, quantity } = req.body;
-  let cart = await Cart.findOne({ userId: req.user.id });
-  if (!cart) cart = new Cart({ userId: req.user.id, items: [] });
-  const idx = cart.items.findIndex(
-    (i) => i.perfumeId.toString() === perfumeId
-  );
-  if (idx > -1) cart.items[idx].quantity = quantity;
-  else cart.items.push({ perfumeId, quantity });
-  await cart.save();
-  res.json({ success: true });
-});
+// PUT - Update item quantity
+cartRouter.put("/:perfumeId", authenticateToken, async (req, res) => {
+  try {
+    const { quantity } = req.body;
+    const { perfumeId } = req.params;
 
-// Remove item
-cartRouter.delete("/:perfumeId", authenticateToken, async (req, res) => {
-  const cart = await Cart.findOne({ userId: req.user.id });
-  if (!cart) return res.json({ success: true });
-  cart.items = cart.items.filter(
-    (i) => i.perfumeId.toString() !== req.params.perfumeId
-  );
-  await cart.save();
-  res.json({ success: true });
-});
+    if (!quantity || quantity < 1) {
+      return res.status(400).json({ error: "Quantity must be at least 1" });
+    }
 
-// Clear
-cartRouter.delete("/", authenticateToken, async (req, res) => {
-  const cart = await Cart.findOne({ userId: req.user.id });
-  if (cart) {
-    cart.items = [];
+    const product = await Product.findById(perfumeId);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    if (product.stock < quantity) {
+      return res.status(400).json({ 
+        error: `Only ${product.stock} items available in stock` 
+      });
+    }
+
+    const cart = await Cart.findOne({ userId: req.user.id });
+    if (!cart) {
+      return res.status(404).json({ error: "Cart not found" });
+    }
+
+    const itemIndex = cart.items.findIndex(
+      (i) => i.perfumeId.toString() === perfumeId
+    );
+
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: "Item not in cart" });
+    }
+
+    cart.items[itemIndex].quantity = quantity;
     await cart.save();
+
+    console.log(`✅ Updated ${product.name} quantity to ${quantity}`);
+    res.json({ success: true, message: "Quantity updated" });
+  } catch (err) {
+    console.error("❌ Cart PUT Error:", err);
+    res.status(500).json({ error: "Failed to update quantity" });
   }
-  res.json({ success: true });
+});
+
+// DELETE - Remove single item from cart
+cartRouter.delete("/:perfumeId", authenticateToken, async (req, res) => {
+  try {
+    const { perfumeId } = req.params;
+    
+    console.log("🛒 Removing item from cart:", perfumeId);
+
+    const cart = await Cart.findOne({ userId: req.user.id });
+    
+    if (!cart) {
+      return res.json({ success: true, message: "Cart already empty" });
+    }
+
+    const initialLength = cart.items.length;
+    cart.items = cart.items.filter(
+      (i) => i.perfumeId.toString() !== perfumeId
+    );
+
+    if (cart.items.length === initialLength) {
+      return res.status(404).json({ error: "Item not found in cart" });
+    }
+
+    await cart.save();
+    
+    console.log("✅ Item removed from cart");
+    res.json({ success: true, message: "Item removed from cart" });
+  } catch (err) {
+    console.error("❌ Cart DELETE Error:", err);
+    res.status(500).json({ error: "Failed to remove item" });
+  }
+});
+
+// DELETE - Clear entire cart
+cartRouter.delete("/", authenticateToken, async (req, res) => {
+  try {
+    console.log("🛒 Clearing cart for user:", req.user.id);
+
+    const cart = await Cart.findOne({ userId: req.user.id });
+    
+    if (cart) {
+      cart.items = [];
+      await cart.save();
+      console.log("✅ Cart cleared");
+    }
+
+    res.json({ success: true, message: "Cart cleared" });
+  } catch (err) {
+    console.error("❌ Cart CLEAR Error:", err);
+    res.status(500).json({ error: "Failed to clear cart" });
+  }
 });
 
 app.use("/api/cart", cartRouter);
@@ -391,23 +576,174 @@ app.use("/cart", cartRouter); // backward compatibility
 
 // -------------------- CHECKOUT --------------------
 app.post("/api/checkout", authenticateToken, async (req, res) => {
-  const { name, address, phone } = req.body;
-  const cart = await Cart.findOne({ userId: req.user.id }).populate(
-    "items.perfumeId"
-  );
-  if (!cart || !cart.items.length)
-    return res.status(400).json({ error: "Empty cart" });
+  try {
+    const { name, address, phone } = req.body;
 
-  const items = cart.items.map((i) => ({
-    perfumeId: i.perfumeId._id,
-    quantity: i.quantity,
-    unitPrice: i.perfumeId.price,
-  }));
-  const total = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
-  await Order.create({ userId: req.user.id, name, address, phone, items, total });
-  cart.items = [];
-  await cart.save();
-  res.json({ success: true });
+    // Validate input
+    if (!name || !address || !phone) {
+      return res.status(400).json({ 
+        error: "Name, address, and phone are required" 
+      });
+    }
+
+    const cart = await Cart.findOne({ userId: req.user.id }).populate(
+      "items.perfumeId"
+    );
+
+    if (!cart || !cart.items.length) {
+      return res.status(400).json({ error: "Cart is empty" });
+    }
+
+    // Validate stock availability
+    for (const item of cart.items) {
+      if (!item.perfumeId) {
+        return res.status(400).json({ 
+          error: "Some products in cart are no longer available" 
+        });
+      }
+      
+      if (item.perfumeId.stock < item.quantity) {
+        return res.status(400).json({ 
+          error: `Insufficient stock for ${item.perfumeId.name}` 
+        });
+      }
+    }
+
+    const items = cart.items.map((i) => ({
+      perfumeId: i.perfumeId._id,
+      quantity: i.quantity,
+      unitPrice: i.perfumeId.price,
+    }));
+
+    const total = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+
+    // Create order
+    const order = await Order.create({ 
+      userId: req.user.id, 
+      name, 
+      address, 
+      phone, 
+      items, 
+      total 
+    });
+
+    // Update product stock
+    for (const item of cart.items) {
+      await Product.findByIdAndUpdate(item.perfumeId._id, {
+        $inc: { stock: -item.quantity }
+      });
+    }
+
+    // Clear cart
+    cart.items = [];
+    await cart.save();
+
+    console.log(`✅ Order created: ${order._id} for user ${req.user.id}`);
+    res.json({ 
+      success: true, 
+      message: "Order placed successfully",
+      orderId: order._id 
+    });
+  } catch (err) {
+    console.error("❌ Checkout Error:", err);
+    res.status(500).json({ error: "Failed to process checkout" });
+  }
+});
+
+// -------------------- ORDERS --------------------
+app.get("/api/orders", authenticateToken, async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.user.id })
+      .populate("items.perfumeId")
+      .sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (err) {
+    console.error("❌ Orders GET Error:", err);
+    res.status(500).json({ error: "Failed to fetch orders" });
+  }
+});
+
+app.get("/api/orders/:id", authenticateToken, async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.id,
+      userId: req.user.id,
+    }).populate("items.perfumeId");
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    res.json(order);
+  } catch (err) {
+    console.error("❌ Order GET Error:", err);
+    res.status(500).json({ error: "Failed to fetch order" });
+  }
+});
+
+// -------------------- REVIEWS --------------------
+app.get("/api/reviews/:perfumeId", async (req, res) => {
+  try {
+    const reviews = await Review.find({ perfumeId: req.params.perfumeId })
+      .populate("userId", "firstName lastName")
+      .sort({ createdAt: -1 });
+    res.json(reviews);
+  } catch (err) {
+    console.error("❌ Reviews GET Error:", err);
+    res.status(500).json({ error: "Failed to fetch reviews" });
+  }
+});
+
+app.post("/api/reviews", authenticateToken, async (req, res) => {
+  try {
+    const { perfumeId, rating, comment } = req.body;
+
+    if (!perfumeId || !rating) {
+      return res.status(400).json({ error: "Product ID and rating are required" });
+    }
+
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ error: "Rating must be between 1 and 5" });
+    }
+
+    const product = await Product.findById(perfumeId);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Check if user already reviewed this product
+    const existingReview = await Review.findOne({
+      perfumeId,
+      userId: req.user.id,
+    });
+
+    if (existingReview) {
+      existingReview.rating = rating;
+      existingReview.comment = comment;
+      await existingReview.save();
+    } else {
+      await Review.create({
+        perfumeId,
+        userId: req.user.id,
+        rating,
+        comment,
+      });
+    }
+
+    // Update product rating
+    const reviews = await Review.find({ perfumeId });
+    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+    
+    product.rating = Math.round(avgRating * 10) / 10;
+    product.totalReviews = reviews.length;
+    await product.save();
+
+    console.log(`✅ Review submitted for product ${perfumeId}`);
+    res.json({ success: true, message: "Review submitted successfully" });
+  } catch (err) {
+    console.error("❌ Review POST Error:", err);
+    res.status(500).json({ error: "Failed to submit review" });
+  }
 });
 
 // -------------------- 404 HANDLER --------------------
@@ -419,4 +755,5 @@ app.use("/api", (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`👨‍💻 AdminJS: http://localhost:${PORT}${admin.options.rootPath}`);
+  console.log(`📦 Cart functionality: FIXED ✅`);
 });
