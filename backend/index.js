@@ -1,3 +1,4 @@
+// ======================= IMPORTS =======================
 import express from "express";
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
@@ -9,42 +10,32 @@ import dotenv from "dotenv";
 import AdminJS from "adminjs";
 import AdminJSExpress from "@adminjs/express";
 import * as AdminJSMongoose from "@adminjs/mongoose";
-import session from "express-session";
 import Brevo from "@getbrevo/brevo";
 
 dotenv.config();
 
-// -------------------- APP SETUP --------------------
+// ======================= APP SETUP =======================
 const app = express();
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
-const FRONTEND_URL =
-  process.env.FRONTEND_URL || "https://eyes-perfume-main.vercel.app";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://eyes-perfume-main.vercel.app";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "GOOGLE_CLIENT_ID";
-const GOOGLE_CLIENT_SECRET =
-  process.env.GOOGLE_CLIENT_SECRET || "GOOGLE_CLIENT_SECRET";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "GOOGLE_CLIENT_SECRET";
 const otpStore = Object.create(null);
 
-// -------------------- CORS (FIXED) --------------------
+// ======================= CORS (FIXED) =======================
 const allowedOrigins = [
-  process.env.FRONTEND_URL || "https://eyes-perfume-main.vercel.app",
+  FRONTEND_URL,
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  "https://api-eyes-main.onrender.com", // ✅ allow your API domain itself
+  "https://api-eyes-main.onrender.com"
 ];
 
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow requests with no origin (e.g. Postman, server-side calls)
       if (!origin) return cb(null, true);
-
-      // Allow same-origin (your API calling itself)
-      if (origin === "https://api-eyes-main.onrender.com") return cb(null, true);
-
-      // Allow whitelisted origins
       if (allowedOrigins.includes(origin)) return cb(null, true);
-
       console.warn("🚫 Blocked CORS origin:", origin);
       return cb(new Error("Not allowed by CORS"));
     },
@@ -53,11 +44,11 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
 app.options("*", cors());
+app.use(express.json());
+app.use(passport.initialize());
 
-
-// -------------------- DATABASE --------------------
+// ======================= DATABASE =======================
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB connected"))
@@ -66,173 +57,123 @@ mongoose
     process.exit(1);
   });
 
-// -------------------- MIDDLEWARE --------------------
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      console.warn("🚫 Blocked CORS origin:", origin);
-      return cb(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-  })
-);
-app.use(express.json());
-app.use(passport.initialize());
-
-// -------------------- SCHEMAS --------------------
-const userSchema = new mongoose.Schema(
-  {
-    firstName: { type: String, required: true },
-    lastName: { type: String, required: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
-    passwordHash: { type: String, required: true },
-    role: { type: String, enum: ["user", "admin"], default: "user" },
-    emailVerifiedAt: { type: Date },
-  },
-  { timestamps: true }
-);
+// ======================= SCHEMAS =======================
+const userSchema = new mongoose.Schema({
+  firstName: String,
+  lastName: String,
+  email: { type: String, required: true, unique: true, lowercase: true },
+  passwordHash: { type: String, required: true },
+  role: { type: String, enum: ["user", "admin"], default: "user" },
+  emailVerifiedAt: Date,
+}, { timestamps: true });
 const User = mongoose.model("User", userSchema);
 
-const productSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    price: { type: Number, required: true },
-    originalPrice: Number,
-    image: String,
-    images: [String],
-    description: String,
-    notes: [String],
-    brand: String,
-    category: String,
-    rating: { type: Number, default: 0 },
-    totalReviews: { type: Number, default: 0 },
-    isRecent: Boolean,
-    isBestseller: Boolean,
-    stock: { type: Number, default: 100 },
-    tags: [String],
-  },
-  { timestamps: true }
-);
+const productSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  price: Number,
+  originalPrice: Number,
+  image: String,
+  images: [String],
+  description: String,
+  notes: [String],
+  brand: String,
+  category: String,
+  rating: { type: Number, default: 0 },
+  totalReviews: { type: Number, default: 0 },
+  isRecent: Boolean,
+  isBestseller: Boolean,
+  stock: { type: Number, default: 100 },
+  tags: [String],
+}, { timestamps: true });
 const Product = mongoose.model("Product", productSchema);
 
-const orderSchema = new mongoose.Schema(
-  {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    name: String,
-    address: String,
-    phone: String,
-    status: {
-      type: String,
-      enum: ["placed", "processing", "shipped", "delivered", "cancelled"],
-      default: "placed",
-    },
-    items: [
-      {
-        perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-        quantity: Number,
-        unitPrice: Number,
-      },
-    ],
-    total: Number,
-    paymentMethod: String,
+const orderSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  name: String,
+  address: String,
+  phone: String,
+  status: {
+    type: String,
+    enum: ["placed", "processing", "shipped", "delivered", "cancelled"],
+    default: "placed",
   },
-  { timestamps: true }
-);
+  items: [
+    {
+      perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
+      quantity: Number,
+      unitPrice: Number,
+    },
+  ],
+  total: Number,
+  paymentMethod: String,
+}, { timestamps: true });
 const Order = mongoose.model("Order", orderSchema);
 
-const cartSchema = new mongoose.Schema(
-  {
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true },
-    items: [
-      {
-        perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-        quantity: Number,
-      },
-    ],
-  },
-  { timestamps: true }
-);
+const cartSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", unique: true },
+  items: [
+    {
+      perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
+      quantity: Number,
+    },
+  ],
+}, { timestamps: true });
 const Cart = mongoose.model("Cart", cartSchema);
 
-const reviewSchema = new mongoose.Schema(
-  {
-    perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    rating: { type: Number, min: 1, max: 5 },
-    comment: String,
-  },
-  { timestamps: true }
-);
+const reviewSchema = new mongoose.Schema({
+  perfumeId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  rating: { type: Number, min: 1, max: 5 },
+  comment: String,
+}, { timestamps: true });
 reviewSchema.index({ perfumeId: 1, userId: 1 }, { unique: true });
 const Review = mongoose.model("Review", reviewSchema);
 
-// -------------------- ADMINJS (NO COOKIES) --------------------
+// ======================= ADMINJS (NO COOKIES) =======================
 AdminJS.registerAdapter({
   Resource: AdminJSMongoose.Resource,
   Database: AdminJSMongoose.Database,
 });
-
 const admin = new AdminJS({
   resources: [User, Product, Order, Cart, Review],
   rootPath: "/admin",
-  branding: {
-    companyName: "EYES Perfume Admin",
-    logo: false,
-    softwareBrothers: false,
-  },
+  branding: { companyName: "EYES Perfume Admin", logo: false, softwareBrothers: false },
 });
-
-// --- Authentication without cookies ---
 const adminRouter = AdminJSExpress.buildAuthenticatedRouter(
   admin,
   {
     authenticate: async (email, password) => {
-      console.log("🔐 Admin login attempt:", email);
-      if (
-        email === process.env.ADMIN_EMAIL &&
-        password === process.env.ADMIN_PASSWORD
-      ) {
-        console.log("✅ Admin login success");
+      if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+        console.log("✅ Admin logged in");
         return { email };
-      } else {
-        console.warn("❌ Invalid admin credentials");
-        return null;
       }
+      console.warn("❌ Invalid admin credentials");
+      return null;
     },
-    cookieName: "adminjs", // still required by AdminJS API, but unused
-    cookiePassword: "skip-session",
+    cookieName: "adminjs",
+    cookiePassword: "no-cookie",
   },
-  null, // no session middleware
-  {
-    resave: false,
-    saveUninitialized: false,
-  }
+  null,
+  { resave: false, saveUninitialized: false }
 );
-
 app.use(admin.options.rootPath, adminRouter);
 
-// -------------------- BREVO EMAIL (FIXED) --------------------
+// ======================= BREVO EMAIL =======================
 const brevoClient = Brevo.ApiClient.instance;
 const apiKey = brevoClient.authentications["api-key"];
-
 if (!process.env.BREVO_API_KEY) {
-  console.error("❌ BREVO_API_KEY missing! Check Render environment vars.");
+  console.error("❌ BREVO_API_KEY missing!");
 } else {
   console.log("✅ Brevo API key loaded.");
 }
 apiKey.apiKey = process.env.BREVO_API_KEY;
-
 const brevo = new Brevo.TransactionalEmailsApi();
 
-function fromAddress() {
-  return (
-    process.env.EMAIL_FROM?.match(/<(.+)>/)?.[1] ||
-    process.env.EMAIL_FROM ||
-    "noreply@eyesperfume.com"
-  );
-}
+const fromAddress = () =>
+  process.env.EMAIL_FROM?.match(/<(.+)>/)?.[1] ||
+  process.env.EMAIL_FROM ||
+  "noreply@eyesperfume.com";
+
 async function sendOtpEmail(email, otp) {
   try {
     const payload = {
@@ -241,19 +182,16 @@ async function sendOtpEmail(email, otp) {
       subject: "Your EYES Perfume OTP Code",
       htmlContent: `<p>Your OTP is <b>${otp}</b>. It expires in 5 minutes.</p>`,
     };
-    console.log("📨 Sending Brevo OTP email to:", email);
-    const res = await brevo.sendTransacEmail(payload);
-    console.log("✅ Brevo email sent:", res.body || res);
+    console.log("📨 Sending OTP via Brevo →", email);
+    await brevo.sendTransacEmail(payload);
+    console.log("✅ Brevo email sent.");
   } catch (err) {
-    console.error("❌ Brevo sendTransacEmail error:", err?.response?.body || err);
-    throw err;
+    console.error("❌ Brevo email error:", err?.response?.body || err);
   }
 }
-function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
+const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-// -------------------- AUTH HELPERS --------------------
+// ======================= AUTH HELPERS =======================
 function authenticateToken(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "Unauthorized" });
@@ -268,37 +206,32 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// -------------------- ROUTES --------------------
+// ======================= ROUTES =======================
 
 // Health
-app.get("/", (_, res) => res.send("🚀 EYES Perfume backend (Brevo) running!"));
+app.get("/", (_, res) => res.send("🚀 EYES Perfume backend running with Brevo & AdminJS"));
 
 // Signup
 app.post("/api/signup", async (req, res) => {
   try {
-    const { firstName, lastName, email, password, confirmPassword } = req.body || {};
+    const { firstName, lastName, email, password, confirmPassword } = req.body;
     if (!firstName || !lastName || !email || !password || !confirmPassword)
       return res.status(400).json({ error: "All fields are required" });
     if (password !== confirmPassword)
       return res.status(400).json({ error: "Passwords do not match" });
 
     const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(400).json({ error: "Email already exists" });
+    if (existing) return res.status(400).json({ error: "Email already registered." });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({
-      firstName,
-      lastName,
-      email: email.toLowerCase(),
-      passwordHash,
-    });
+    const user = await User.create({ firstName, lastName, email, passwordHash });
 
     const otp = generateOtp();
     otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user };
     await sendOtpEmail(email, otp);
-    res.json({ message: "Signup successful. OTP sent to email." });
+    res.json({ message: "Signup successful. OTP sent." });
   } catch (err) {
-    console.error("Signup Error:", err);
+    console.error("Signup error:", err);
     res.status(500).json({ error: "Server error." });
   }
 });
@@ -306,53 +239,31 @@ app.post("/api/signup", async (req, res) => {
 // Login
 app.post("/api/login", async (req, res) => {
   try {
-    const { email, password } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password required." });
-    }
-
-    console.log("🔐 Login attempt:", email);
+    const { email, password } = req.body;
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
-      console.warn("⚠️ Login failed — user not found:", email);
-      return res.status(400).json({ error: "Invalid credentials." });
-    }
-
-    const valid = await bcrypt.compare(password, user.passwordHash || "");
-    if (!valid) {
-      console.warn("⚠️ Login failed — wrong password:", email);
-      return res.status(400).json({ error: "Invalid credentials." });
-    }
+    if (!user || !(await bcrypt.compare(password, user.passwordHash)))
+      return res.status(400).json({ error: "Invalid credentials" });
 
     const otp = generateOtp();
     otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user };
-
-    console.log(`📧 Sending OTP ${otp} to ${email}`);
     await sendOtpEmail(email, otp);
-
-    console.log("✅ OTP email sent successfully!");
-    res.json({ message: "OTP sent to your email." });
+    res.json({ message: "OTP sent to email." });
   } catch (err) {
-    console.error("🔥 /api/login internal error:", err?.response?.body || err);
-    res.status(500).json({ error: "Internal Server Error. Check backend logs." });
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Server error." });
   }
 });
-
 
 // Verify OTP
 app.post("/api/verify-otp", (req, res) => {
   const { email, otp } = req.body;
   const entry = otpStore[email?.toLowerCase()];
-  if (!entry) return res.status(400).json({ error: "Session expired." });
+  if (!entry) return res.status(400).json({ error: "Invalid or expired OTP." });
   if (Date.now() > entry.expires) return res.status(400).json({ error: "OTP expired." });
-  if (entry.otp !== otp) return res.status(400).json({ error: "Invalid OTP." });
+  if (entry.otp !== otp) return res.status(400).json({ error: "Incorrect OTP." });
 
   const user = entry.user;
-  const token = jwt.sign(
-    { id: user._id, email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: "7d" }
-  );
+  const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
   delete otpStore[email.toLowerCase()];
   res.json({
     token,
@@ -367,7 +278,6 @@ passport.use(
     async (_, __, profile, done) => {
       try {
         const email = profile.emails?.[0]?.value?.toLowerCase();
-        if (!email) return done(null, false);
         let user = await User.findOne({ email });
         if (!user) {
           user = await User.create({
@@ -413,23 +323,45 @@ app.get("/api/products/:id", async (req, res) => {
   res.json(p);
 });
 
-// Cart
+// ======================= CART (FIXED) =======================
 app.get("/api/cart", authenticateToken, async (req, res) => {
   const cart = await Cart.findOne({ userId: req.user.id }).populate("items.perfumeId");
-  res.json(cart ? cart.items : []);
+  if (!cart || !cart.items.length) return res.json({ items: [], total: 0 });
+  const items = cart.items
+    .filter((it) => it.perfumeId)
+    .map((it) => ({
+      perfumeId: it.perfumeId._id,
+      name: it.perfumeId.name,
+      image: it.perfumeId.image,
+      price: it.perfumeId.price,
+      quantity: it.quantity,
+      subtotal: it.quantity * it.perfumeId.price,
+    }));
+  const total = items.reduce((sum, i) => sum + i.subtotal, 0);
+  res.json({ items, total });
 });
+
 app.post("/api/cart", authenticateToken, async (req, res) => {
   const { perfumeId, quantity } = req.body;
   let cart = await Cart.findOne({ userId: req.user.id });
   if (!cart) cart = new Cart({ userId: req.user.id, items: [] });
-  const idx = cart.items.findIndex((i) => i.perfumeId.toString() === perfumeId);
-  if (idx > -1) cart.items[idx].quantity = quantity;
+  const index = cart.items.findIndex((it) => it.perfumeId.toString() === perfumeId);
+  if (index >= 0) cart.items[index].quantity = quantity;
   else cart.items.push({ perfumeId, quantity });
   await cart.save();
   res.json({ success: true });
 });
 
-// Checkout
+app.delete("/api/cart/:perfumeId", authenticateToken, async (req, res) => {
+  const cart = await Cart.findOne({ userId: req.user.id });
+  if (cart) {
+    cart.items = cart.items.filter((i) => i.perfumeId.toString() !== req.params.perfumeId);
+    await cart.save();
+  }
+  res.json({ success: true });
+});
+
+// ======================= CHECKOUT & ORDERS =======================
 app.post("/api/checkout", authenticateToken, async (req, res) => {
   const { name, address, phone, paymentMethod } = req.body;
   const cart = await Cart.findOne({ userId: req.user.id }).populate("items.perfumeId");
@@ -439,31 +371,41 @@ app.post("/api/checkout", authenticateToken, async (req, res) => {
     quantity: i.quantity,
     unitPrice: i.perfumeId.price,
   }));
-  const total = items.reduce((a, b) => a + b.quantity * b.unitPrice, 0);
-  const order = await Order.create({ userId: req.user.id, name, address, phone, items, total, paymentMethod });
+  const total = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+  await Order.create({ userId: req.user.id, name, address, phone, paymentMethod, items, total });
   cart.items = [];
   await cart.save();
-  res.json({ success: true, orderId: order._id });
+  res.json({ success: true });
 });
 
-// Test Email
-app.post("/api/test-email", async (req, res) => {
+app.get("/api/orders", authenticateToken, async (req, res) => {
+  const orders = await Order.find({ userId: req.user.id }).populate("items.perfumeId").sort({ createdAt: -1 });
+  res.json(orders);
+});
+
+// ======================= REVIEWS =======================
+app.post("/api/reviews", authenticateToken, async (req, res) => {
   try {
-    const { to } = req.body;
-    await brevo.sendTransacEmail({
-      sender: { name: "EYES Perfume", email: fromAddress() },
-      to: [{ email: to || process.env.ADMIN_EMAIL }],
-      subject: "Test Email - EYES Perfume",
-      htmlContent: "<p>This confirms Brevo email works.</p>",
-    });
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("Test Email Error:", err);
-    res.status(500).json({ ok: false, error: err?.message });
+    const { perfumeId, rating, comment } = req.body;
+    const existing = await Review.findOne({ perfumeId, userId: req.user.id });
+    if (existing) return res.status(400).json({ error: "Already reviewed." });
+    const review = await Review.create({ perfumeId, userId: req.user.id, rating, comment });
+    const reviews = await Review.find({ perfumeId });
+    const avg = reviews.reduce((a, r) => a + r.rating, 0) / reviews.length;
+    await Product.findByIdAndUpdate(perfumeId, { rating: avg, totalReviews: reviews.length });
+    res.json(review);
+  } catch (e) {
+    console.error("Review Error:", e);
+    res.status(500).json({ error: "Failed to post review." });
   }
 });
 
-// -------------------- START SERVER --------------------
+app.get("/api/reviews/:perfumeId", async (req, res) => {
+  const reviews = await Review.find({ perfumeId: req.params.perfumeId }).populate("userId", "firstName lastName");
+  res.json(reviews);
+});
+
+// ======================= START SERVER =======================
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`👨‍💻 AdminJS: http://localhost:${PORT}${admin.options.rootPath}`);
