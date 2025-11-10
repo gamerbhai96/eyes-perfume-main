@@ -46,11 +46,10 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow requests with no origin (mobile apps, Postman, etc)
       if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
       console.warn("🚫 Blocked CORS origin:", origin);
-      return cb(null, true); // Allow anyway for testing
+      return cb(null, true);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -58,7 +57,6 @@ app.use(
   })
 );
 
-// Handle preflight requests
 app.options("*", cors());
 
 // 2. Body parser
@@ -275,7 +273,6 @@ function requireAdmin(req, res, next) {
 // -------------------- ROUTES --------------------
 app.get("/", (_, res) => res.send("🚀 EYES Perfume Backend Running!"));
 
-// Health check
 app.get("/api/health", (_, res) => {
   res.json({ 
     status: "OK", 
@@ -438,7 +435,6 @@ app.get("/api/products/:id", async (req, res) => {
 
 // -------------------- CART ROUTES (100% FIXED) --------------------
 
-// GET CART - Fetch user's cart with populated products
 app.get("/api/cart", authenticateToken, async (req, res) => {
   try {
     console.log("🛒 GET CART - User ID:", req.user.id);
@@ -453,7 +449,6 @@ app.get("/api/cart", authenticateToken, async (req, res) => {
       return res.json({ items: [], total: 0 });
     }
 
-    // Filter out deleted products
     const validItems = cart.items.filter(item => item.perfumeId != null);
     
     const items = validItems.map((item) => ({
@@ -479,7 +474,6 @@ app.get("/api/cart", authenticateToken, async (req, res) => {
   }
 });
 
-// ADD TO CART - Add product to cart or update quantity
 app.post("/api/cart", authenticateToken, async (req, res) => {
   try {
     const { perfumeId, quantity } = req.body;
@@ -489,7 +483,6 @@ app.post("/api/cart", authenticateToken, async (req, res) => {
     console.log("   Product ID:", perfumeId);
     console.log("   Quantity:", quantity);
 
-    // Validate inputs
     if (!perfumeId) {
       console.log("❌ Missing perfumeId");
       return res.status(400).json({ error: "Product ID is required" });
@@ -502,7 +495,6 @@ app.post("/api/cart", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "Quantity must be at least 1" });
     }
 
-    // Check if product exists
     const product = await Product.findById(perfumeId);
     
     if (!product) {
@@ -512,7 +504,6 @@ app.post("/api/cart", authenticateToken, async (req, res) => {
 
     console.log("✅ Product found:", product.name);
 
-    // Check stock
     if (product.stock < qty) {
       console.log("❌ Insufficient stock");
       return res.status(400).json({ 
@@ -520,7 +511,6 @@ app.post("/api/cart", authenticateToken, async (req, res) => {
       });
     }
 
-    // Find or create cart
     let cart = await Cart.findOne({ userId: req.user.id });
     
     if (!cart) {
@@ -533,13 +523,11 @@ app.post("/api/cart", authenticateToken, async (req, res) => {
       console.log("📦 Existing cart found with", cart.items.length, "items");
     }
 
-    // Check if product already in cart
     const existingItemIndex = cart.items.findIndex(
       (item) => item.perfumeId.toString() === perfumeId.toString()
     );
 
     if (existingItemIndex !== -1) {
-      // Product exists, update quantity
       const newQty = cart.items[existingItemIndex].quantity + qty;
       
       if (newQty > product.stock) {
@@ -552,7 +540,6 @@ app.post("/api/cart", authenticateToken, async (req, res) => {
       cart.items[existingItemIndex].quantity = newQty;
       console.log(`✅ Updated quantity to ${newQty}`);
     } else {
-      // New product, add to cart
       cart.items.push({
         perfumeId: perfumeId,
         quantity: qty
@@ -560,11 +547,9 @@ app.post("/api/cart", authenticateToken, async (req, res) => {
       console.log(`✅ Added new item with quantity ${qty}`);
     }
 
-    // Save cart
     await cart.save();
     console.log("✅ Cart saved to database");
 
-    // Fetch updated cart with populated products
     const updatedCart = await Cart.findOne({ userId: req.user.id }).populate({
       path: "items.perfumeId",
       model: "Product",
@@ -605,7 +590,6 @@ app.post("/api/cart", authenticateToken, async (req, res) => {
   }
 });
 
-// UPDATE CART ITEM - Update quantity of specific item
 app.put("/api/cart/:perfumeId", authenticateToken, async (req, res) => {
   try {
     const { perfumeId } = req.params;
@@ -658,7 +642,6 @@ app.put("/api/cart/:perfumeId", authenticateToken, async (req, res) => {
   }
 });
 
-// DELETE CART ITEM - Remove specific item
 app.delete("/api/cart/:perfumeId", authenticateToken, async (req, res) => {
   try {
     const { perfumeId } = req.params;
@@ -690,7 +673,6 @@ app.delete("/api/cart/:perfumeId", authenticateToken, async (req, res) => {
   }
 });
 
-// CLEAR CART - Remove all items
 app.delete("/api/cart", authenticateToken, async (req, res) => {
   try {
     console.log("🛒 CLEAR CART - User:", req.user.id);
@@ -708,17 +690,6 @@ app.delete("/api/cart", authenticateToken, async (req, res) => {
     console.error("❌ Cart CLEAR Error:", err);
     res.status(500).json({ error: "Failed to clear cart" });
   }
-});
-
-// Backward compatibility routes
-app.get("/cart", authenticateToken, async (req, res) => {
-  req.url = "/api/cart";
-  return app.handle(req, res);
-});
-
-app.post("/cart", authenticateToken, async (req, res) => {
-  req.url = "/api/cart";
-  return app.handle(req, res);
 });
 
 // -------------------- CHECKOUT --------------------
@@ -742,7 +713,6 @@ app.post("/api/checkout", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "Cart is empty" });
     }
 
-    // Validate stock
     for (const item of cart.items) {
       if (!item.perfumeId) {
         return res.status(400).json({ 
@@ -765,7 +735,6 @@ app.post("/api/checkout", authenticateToken, async (req, res) => {
 
     const total = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
 
-    // Create order
     const order = await Order.create({ 
       userId: req.user.id, 
       name, 
@@ -776,14 +745,12 @@ app.post("/api/checkout", authenticateToken, async (req, res) => {
       status: "pending"
     });
 
-    // Update stock
     for (const item of cart.items) {
       await Product.findByIdAndUpdate(item.perfumeId._id, {
         $inc: { stock: -item.quantity }
       });
     }
 
-    // Clear cart
     cart.items = [];
     await cart.save();
 
@@ -880,7 +847,6 @@ app.post("/api/reviews", authenticateToken, async (req, res) => {
       });
     }
 
-    // Update product rating
     const reviews = await Review.find({ perfumeId });
     const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
     
@@ -892,4 +858,18 @@ app.post("/api/reviews", authenticateToken, async (req, res) => {
     res.json({ success: true, message: "Review submitted" });
   } catch (err) {
     console.error("❌ Review Error:", err);
-    res.status(500).json({ error: "Failed to submit
+    res.status(500).json({ error: "Failed to submit review" });
+  }
+});
+
+// -------------------- 404 HANDLER --------------------
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "Not Found", path: req.originalUrl });
+});
+
+// -------------------- START SERVER --------------------
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`👨‍💻 AdminJS: http://localhost:${PORT}${admin.options.rootPath}`);
+  console.log(`📦 Cart functionality: FIXED ✅`);
+});
