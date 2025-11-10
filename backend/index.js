@@ -142,35 +142,49 @@ const reviewSchema = new mongoose.Schema(
 reviewSchema.index({ perfumeId: 1, userId: 1 }, { unique: true });
 const Review = mongoose.model("Review", reviewSchema);
 
-// -------------------- ADMINJS --------------------
+// -------------------- ADMINJS (NO COOKIES) --------------------
 AdminJS.registerAdapter({
   Resource: AdminJSMongoose.Resource,
   Database: AdminJSMongoose.Database,
 });
+
 const admin = new AdminJS({
   resources: [User, Product, Order, Cart, Review],
   rootPath: "/admin",
-  branding: { companyName: "EYES Perfume Admin" },
+  branding: {
+    companyName: "EYES Perfume Admin",
+    logo: false,
+    softwareBrothers: false,
+  },
 });
+
+// --- Authentication without cookies ---
 const adminRouter = AdminJSExpress.buildAuthenticatedRouter(
   admin,
   {
     authenticate: async (email, password) => {
-      if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-        return { email: process.env.ADMIN_EMAIL };
+      console.log("🔐 Admin login attempt:", email);
+      if (
+        email === process.env.ADMIN_EMAIL &&
+        password === process.env.ADMIN_PASSWORD
+      ) {
+        console.log("✅ Admin login success");
+        return { email };
+      } else {
+        console.warn("❌ Invalid admin credentials");
+        return null;
       }
-      return null;
     },
-    cookieName: "adminjs",
-    cookiePassword: process.env.ADMIN_COOKIE_SECRET || "supersecret-cookie",
+    cookieName: "adminjs", // still required by AdminJS API, but unused
+    cookiePassword: "skip-session",
   },
-  null,
+  null, // no session middleware
   {
     resave: false,
-    saveUninitialized: true,
-    store: new session.MemoryStore(),
+    saveUninitialized: false,
   }
 );
+
 app.use(admin.options.rootPath, adminRouter);
 
 // -------------------- BREVO EMAIL (FIXED) --------------------
