@@ -25,11 +25,37 @@ const GOOGLE_CLIENT_SECRET =
   process.env.GOOGLE_CLIENT_SECRET || "GOOGLE_CLIENT_SECRET";
 const otpStore = Object.create(null);
 
+// -------------------- CORS (FIXED) --------------------
 const allowedOrigins = [
-  FRONTEND_URL,
+  process.env.FRONTEND_URL || "https://eyes-perfume-main.vercel.app",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
+  "https://api-eyes-main.onrender.com", // ✅ allow your API domain itself
 ];
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Allow requests with no origin (e.g. Postman, server-side calls)
+      if (!origin) return cb(null, true);
+
+      // Allow same-origin (your API calling itself)
+      if (origin === "https://api-eyes-main.onrender.com") return cb(null, true);
+
+      // Allow whitelisted origins
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+
+      console.warn("🚫 Blocked CORS origin:", origin);
+      return cb(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+app.options("*", cors());
+
 
 // -------------------- DATABASE --------------------
 mongoose
