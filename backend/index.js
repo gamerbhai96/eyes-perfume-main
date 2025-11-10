@@ -27,9 +27,9 @@ const otpStore = Object.create(null);
 // -------------------- CORS --------------------
 const allowedOrigins = [
   FRONTEND_URL,
-  "https://api-eyes-main.onrender.com",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
+  "https://api-eyes-main.onrender.com",
 ];
 
 app.use(
@@ -165,19 +165,26 @@ const adminRouter = AdminJSExpress.buildAuthenticatedRouter(
   admin,
   {
     authenticate: async (email, password) => {
+      console.log("🔐 Admin login attempt:", email);
       if (
         email === process.env.ADMIN_EMAIL &&
         password === process.env.ADMIN_PASSWORD
       ) {
+        console.log("✅ Admin login success");
         return { email };
+      } else {
+        console.warn("❌ Invalid admin credentials");
+        return null;
       }
-      return null;
     },
     cookieName: "adminjs",
     cookiePassword: "skip-session",
   },
   null,
-  { resave: false, saveUninitialized: false }
+  {
+    resave: false,
+    saveUninitialized: false,
+  }
 );
 app.use(admin.options.rootPath, adminRouter);
 
@@ -185,7 +192,7 @@ app.use(admin.options.rootPath, adminRouter);
 const brevoClient = Brevo.ApiClient.instance;
 const apiKey = brevoClient.authentications["api-key"];
 if (!process.env.BREVO_API_KEY)
-  console.error("❌ BREVO_API_KEY missing! Check Render vars.");
+  console.error("❌ BREVO_API_KEY missing! Check Render environment vars.");
 else console.log("✅ Brevo API key loaded.");
 apiKey.apiKey = process.env.BREVO_API_KEY;
 
@@ -237,19 +244,19 @@ function requireAdmin(req, res, next) {
 // -------------------- ROUTES --------------------
 
 // Health
-app.get("/", (_, res) => res.send("🚀 EYES Perfume backend is running!"));
+app.get("/", (_, res) => res.send("🚀 EYES Perfume backend (Brevo) running!"));
 
 // Signup
 app.post("/api/signup", async (req, res) => {
   try {
-    const { firstName, lastName, email, password, confirmPassword } = req.body;
+    const { firstName, lastName, email, password, confirmPassword } = req.body || {};
     if (!firstName || !lastName || !email || !password || !confirmPassword)
-      return res.status(400).json({ error: "All fields are required." });
+      return res.status(400).json({ error: "All fields are required" });
     if (password !== confirmPassword)
-      return res.status(400).json({ error: "Passwords do not match." });
+      return res.status(400).json({ error: "Passwords do not match" });
 
     const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(400).json({ error: "Email already exists." });
+    if (existing) return res.status(400).json({ error: "Email already exists" });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await User.create({
@@ -262,7 +269,7 @@ app.post("/api/signup", async (req, res) => {
     const otp = generateOtp();
     otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user };
     await sendOtpEmail(email, otp);
-    res.json({ message: "Signup successful, OTP sent." });
+    res.json({ message: "Signup successful. OTP sent to email." });
   } catch (err) {
     console.error("Signup Error:", err);
     res.status(500).json({ error: "Server error." });
@@ -272,20 +279,22 @@ app.post("/api/signup", async (req, res) => {
 // Login
 app.post("/api/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
     if (!email || !password)
       return res.status(400).json({ error: "Email and password required." });
+
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user || !(await bcrypt.compare(password, user.passwordHash)))
       return res.status(400).json({ error: "Invalid credentials." });
 
     const otp = generateOtp();
     otpStore[email.toLowerCase()] = { otp, expires: Date.now() + 5 * 60 * 1000, user };
+
     await sendOtpEmail(email, otp);
     res.json({ message: "OTP sent to your email." });
   } catch (err) {
-    console.error("🔥 /api/login internal error:", err?.response?.body || err);
-    res.status(500).json({ error: "Internal server error." });
+    console.error("🔥 /api/login internal error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -293,7 +302,7 @@ app.post("/api/login", async (req, res) => {
 app.post("/api/verify-otp", (req, res) => {
   const { email, otp } = req.body;
   const entry = otpStore[email?.toLowerCase()];
-  if (!entry) return res.status(400).json({ error: "Invalid or expired OTP." });
+  if (!entry) return res.status(400).json({ error: "Session expired." });
   if (Date.now() > entry.expires) return res.status(400).json({ error: "OTP expired." });
   if (entry.otp !== otp) return res.status(400).json({ error: "Invalid OTP." });
 
@@ -310,7 +319,28 @@ app.post("/api/verify-otp", (req, res) => {
   });
 });
 
-// -------------------- CART (FIXED) --------------------
+// -------------------- PRODUCTS --------------------
+app.get("/api/products", async (req, res) => {
+  try {
+    const products = await Product.find().sort({ createdAt: -1 });
+    res.json(products);
+  } catch (err) {
+    console.error("❌ Product fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch products." });
+  }
+});
+
+app.get("/api/products/:id", async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: "Product not found." });
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch product." });
+  }
+});
+
+// -------------------- CART --------------------
 const cartRouter = express.Router();
 
 cartRouter.get("/", authenticateToken, async (req, res) => {
@@ -320,9 +350,7 @@ cartRouter.get("/", authenticateToken, async (req, res) => {
       model: "Product",
       select: "name price image",
     });
-
     if (!cart || !cart.items.length) return res.json({ items: [], total: 0 });
-
     const items = cart.items
       .filter((it) => it.perfumeId)
       .map((it) => ({
@@ -331,10 +359,9 @@ cartRouter.get("/", authenticateToken, async (req, res) => {
         image: it.perfumeId.image,
         price: it.perfumeId.price,
         quantity: it.quantity,
-        subtotal: it.quantity * (it.perfumeId.price || 0),
+        subtotal: Number(it.quantity) * Number(it.perfumeId.price || 0),
       }));
-
-    const total = items.reduce((sum, i) => sum + i.subtotal, 0);
+    const total = items.reduce((s, i) => s + i.subtotal, 0);
     res.json({ items, total });
   } catch (err) {
     console.error("🛒 Cart GET Error:", err);
@@ -347,14 +374,11 @@ cartRouter.post("/", authenticateToken, async (req, res) => {
     const { perfumeId, quantity } = req.body;
     if (!perfumeId || !quantity || quantity < 1)
       return res.status(400).json({ error: "Invalid input" });
-
     let cart = await Cart.findOne({ userId: req.user.id });
     if (!cart) cart = new Cart({ userId: req.user.id, items: [] });
-
-    const index = cart.items.findIndex((i) => i.perfumeId.toString() === perfumeId);
-    if (index >= 0) cart.items[index].quantity = quantity;
+    const idx = cart.items.findIndex((i) => i.perfumeId.toString() === String(perfumeId));
+    if (idx >= 0) cart.items[idx].quantity = quantity;
     else cart.items.push({ perfumeId, quantity });
-
     await cart.save();
     res.json({ success: true });
   } catch (err) {
@@ -365,16 +389,15 @@ cartRouter.post("/", authenticateToken, async (req, res) => {
 
 cartRouter.delete("/:perfumeId", authenticateToken, async (req, res) => {
   try {
+    const { perfumeId } = req.params;
     const cart = await Cart.findOne({ userId: req.user.id });
     if (!cart) return res.json({ success: true });
-
     cart.items = cart.items.filter(
-      (i) => i.perfumeId.toString() !== req.params.perfumeId
+      (i) => i.perfumeId.toString() !== String(perfumeId)
     );
     await cart.save();
     res.json({ success: true });
   } catch (err) {
-    console.error("🛒 Cart DELETE Error:", err);
     res.status(500).json({ error: "Failed to remove item." });
   }
 });
@@ -386,15 +409,60 @@ cartRouter.delete("/", authenticateToken, async (req, res) => {
       cart.items = [];
       await cart.save();
     }
-    res.json({ success: true, message: "Cart cleared." });
+    res.json({ success: true });
   } catch (err) {
-    console.error("🛒 Cart CLEAR Error:", err);
     res.status(500).json({ error: "Failed to clear cart." });
   }
 });
 
 app.use("/api/cart", cartRouter);
 app.use("/cart", cartRouter);
+
+// -------------------- CHECKOUT + ORDERS --------------------
+app.post("/api/checkout", authenticateToken, async (req, res) => {
+  try {
+    const { name, address, phone, paymentMethod } = req.body;
+    const cart = await Cart.findOne({ userId: req.user.id }).populate("items.perfumeId");
+    if (!cart || !cart.items.length)
+      return res.status(400).json({ error: "Cart empty" });
+
+    const items = cart.items.map((it) => ({
+      perfumeId: it.perfumeId._id,
+      quantity: it.quantity,
+      unitPrice: it.perfumeId.price,
+    }));
+
+    const total = items.reduce((a, i) => a + i.quantity * i.unitPrice, 0);
+    const order = await Order.create({
+      userId: req.user.id,
+      name,
+      address,
+      phone,
+      paymentMethod: paymentMethod || "cod",
+      items,
+      total,
+    });
+
+    cart.items = [];
+    await cart.save();
+
+    res.json({ success: true, orderId: order._id });
+  } catch (err) {
+    console.error("Checkout Error:", err);
+    res.status(500).json({ error: "Failed to place order." });
+  }
+});
+
+app.get("/api/orders", authenticateToken, async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.user.id })
+      .populate("items.perfumeId")
+      .sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch orders." });
+  }
+});
 
 // -------------------- START SERVER --------------------
 app.listen(PORT, () => {
