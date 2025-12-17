@@ -1,152 +1,231 @@
 import { useAuth } from '@/hooks/use-auth';
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Trash2, Loader2 } from 'lucide-react';
+import { Trash2, Loader2, Plus, Minus, ShoppingBag, ArrowRight } from 'lucide-react';
 import { useCart } from '@/hooks/use-cart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { API_URL } from '@/lib/api';
-
-interface CartItem {
-  perfumeId: string;
-  product: Product;
-  quantity: number;
-}
-
-interface Product {
-  _id: string;
-  name: string;
-  price: number;
-  image: string;
-}
 
 const Cart = () => {
   const { token } = useAuth();
   const navigate = useNavigate();
-
-  const { cart, fetchCart, setCart } = useCart();
-  const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
+  const { cart, loading, updateQuantity, removeFromCart } = useCart();
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!token) navigate('/login');
-    else fetchCart(); 
-  }, [token, navigate, fetchCart]);
+  }, [token, navigate]);
 
-  const { addToCart } = useCart();
-  const updateItem = async (perfumeId: string, quantity: number) => {
-    setLoadingItemId(perfumeId);
+  const handleIncrement = async (perfumeId: string, currentQty: number) => {
     setError('');
     try {
-      if (quantity === 0) {
-        // Optimistically remove item from cart
-        setCart(prevCart => prevCart.filter(item => item.perfumeId !== perfumeId));
-        const res = await fetch(`${API_URL}/cart/${perfumeId}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (!res.ok) {
-          // Revert if backend fails
-          await fetchCart();
-          setError('Failed to remove item from cart');
-        }
-      } else {
-        await addToCart(perfumeId, quantity);
-      }
+      await updateQuantity(perfumeId, currentQty + 1);
     } catch {
       setError('Failed to update cart');
-    } finally {
-      setLoadingItemId(null);
     }
   };
 
-  // Calculate total
+  const handleDecrement = async (perfumeId: string, currentQty: number) => {
+    setError('');
+    try {
+      if (currentQty <= 1) {
+        await removeFromCart(perfumeId);
+      } else {
+        await updateQuantity(perfumeId, currentQty - 1);
+      }
+    } catch {
+      setError('Failed to update cart');
+    }
+  };
+
+  const handleRemove = async (perfumeId: string) => {
+    setError('');
+    try {
+      await removeFromCart(perfumeId);
+    } catch {
+      setError('Failed to remove item');
+    }
+  };
+
   const total = cart.reduce((sum, item) => {
     return item.product ? sum + item.product.price * item.quantity : sum;
   }, 0);
 
+  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
   if (!token) return null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-hero p-6">
+    <div className="min-h-screen bg-gradient-hero py-12 px-4">
       <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop')] bg-cover bg-center opacity-5 pointer-events-none" />
-      <div className="w-full max-w-md relative z-10">
-        <Card className="perfume-card border-border/50 fade-in" style={{animationDelay: '0.2s'}}>
-          <CardHeader className="text-center pb-6">
-            <CardTitle className="text-2xl font-playfair font-bold">
-              Your Cart
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {error && <div className="text-red-500 text-sm text-center mb-2">{error}</div>}
-            {cart.length === 0 ? (
-              <div className="text-center text-muted-foreground">
-                <p>Your cart is empty.</p>
-                <Button asChild variant="link" className="mt-2">
-                  <Link to="/products">Start shopping</Link>
-                </Button>
+
+      <div className="max-w-4xl mx-auto relative z-10">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-playfair font-bold gradient-text mb-2">Shopping Cart</h1>
+          <p className="text-muted-foreground">
+            {itemCount > 0 ? `${itemCount} item${itemCount > 1 ? 's' : ''} in your cart` : 'Your cart is empty'}
+          </p>
+        </div>
+
+        {error && (
+          <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-xl text-center mb-6">
+            {error}
+          </div>
+        )}
+
+        {cart.length === 0 ? (
+          <Card className="perfume-card border-border/50 text-center py-16">
+            <CardContent>
+              <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-secondary/50 flex items-center justify-center">
+                <ShoppingBag className="w-12 h-12 text-muted-foreground" />
               </div>
-            ) : (
-              <ul className="space-y-4 mb-4">
-                {cart.map(item => {
-                  const product = item.product;
-                  if (!product) {
-                    // Show a loading skeleton or fallback while waiting for backend to populate product
-                    return (
-                      <li key={item.perfumeId} className="flex items-center gap-4 border-b pb-2 opacity-60 animate-pulse">
-                        <div className="w-16 h-16 bg-gray-200 rounded" />
-                        <div className="flex-1">
-                          <div className="h-4 bg-gray-200 rounded w-24 mb-2" />
-                          <div className="h-3 bg-gray-100 rounded w-16" />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 font-semibold">{item.quantity}</span>
-                        </div>
-                      </li>
-                    );
-                  }
+              <h2 className="text-2xl font-playfair font-semibold mb-2">Your cart is empty</h2>
+              <p className="text-muted-foreground mb-6">
+                Discover our collection and find your perfect fragrance
+              </p>
+              <Link to="/products">
+                <Button size="lg" className="glow-effect">
+                  Explore Collection
+                  <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid lg:grid-cols-3 gap-6">
+            {/* Cart Items */}
+            <div className="lg:col-span-2 space-y-4">
+              {cart.map(item => {
+                const product = item.product;
+                if (!product) {
                   return (
-                    <li key={item.perfumeId} className="flex items-center gap-4 border-b pb-2">
-                      <img src={product.image} alt={product.name} className="w-16 h-16 object-cover rounded" />
-                      <div className="flex-1">
-                        <div className="font-semibold text-lg">{product.name}</div>
-                        <div className="text-sm text-muted-foreground">${product.price} x {item.quantity}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {loadingItemId === item.perfumeId ? (
-                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                        ) : (
-                          <>
-                            <Button variant="outline" size="icon" onClick={() => updateItem(item.perfumeId, item.quantity - 1)} disabled={item.quantity <= 1}>-</Button>
-                            <span className="px-2 font-semibold">{item.quantity}</span>
-                            <Button variant="outline" size="icon" onClick={() => updateItem(item.perfumeId, item.quantity + 1)}>+</Button>
-                            <Button variant="destructive" size="icon" onClick={() => updateItem(item.perfumeId, 0)}><Trash2 className="h-4 w-4" /></Button>
-                          </>
-                        )}
-                      </div>
-                    </li>
+                    <Card key={item.perfumeId} className="perfume-card border-border/50 animate-pulse">
+                      <CardContent className="p-4 flex items-center gap-4">
+                        <div className="w-24 h-24 bg-secondary rounded-xl" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-5 bg-secondary rounded w-32" />
+                          <div className="h-4 bg-secondary/50 rounded w-20" />
+                        </div>
+                      </CardContent>
+                    </Card>
                   );
-                })}
-              </ul>
-            )}
-            {cart.length > 0 && (
-              <>
-                <div className="flex justify-between items-center text-lg font-bold border-t pt-4">
-                  <span>Total:</span>
-                  <span>${total.toFixed(2)}</span>
-                </div>
-                <Link to="/checkout">
-                  <Button className="w-full glow-effect mt-2">Checkout</Button>
-                </Link>
-              </>
-            )}
-            <Link to="/products">
-              <Button variant="outline" className="w-full mt-2">
-                {cart.length > 0 ? 'Continue Shopping' : 'Start Shopping'}
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
+                }
+
+                return (
+                  <Card key={item.perfumeId} className="perfume-card border-border/50 overflow-hidden group">
+                    <CardContent className="p-0">
+                      <div className="flex items-stretch">
+                        {/* Product Image */}
+                        <div className="w-32 h-32 flex-shrink-0">
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+
+                        {/* Product Info */}
+                        <div className="flex-1 p-4 flex flex-col justify-between">
+                          <div>
+                            <h3 className="font-semibold text-lg">{product.name}</h3>
+                            <p className="text-primary font-bold text-xl">${product.price}</p>
+                          </div>
+
+                          <div className="flex items-center justify-between mt-2">
+                            {/* Quantity Controls */}
+                            <div className="flex items-center gap-1 bg-secondary/50 rounded-xl p-1">
+                              {loading ? (
+                                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mx-6" />
+                              ) : (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 rounded-lg hover:bg-background"
+                                    onClick={() => handleDecrement(item.perfumeId, item.quantity)}
+                                  >
+                                    <Minus className="h-4 w-4" />
+                                  </Button>
+                                  <span className="w-10 text-center font-semibold">{item.quantity}</span>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 rounded-lg hover:bg-background"
+                                    onClick={() => handleIncrement(item.perfumeId, item.quantity)}
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+
+                            {/* Subtotal & Delete */}
+                            <div className="flex items-center gap-4">
+                              <span className="font-bold text-lg">
+                                ${(product.price * item.quantity).toFixed(2)}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => handleRemove(item.perfumeId)}
+                                disabled={loading}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* Order Summary */}
+            <div className="lg:col-span-1">
+              <Card className="perfume-card border-border/50 sticky top-24">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-xl font-playfair">Order Summary</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Subtotal ({itemCount} items)</span>
+                      <span>${total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Shipping</span>
+                      <span className="text-green-500">Free</span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border/50 pt-4">
+                    <div className="flex justify-between text-xl font-bold">
+                      <span>Total</span>
+                      <span className="text-primary">${total.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <Link to="/checkout" className="block">
+                    <Button className="w-full glow-effect py-6 text-lg" disabled={loading}>
+                      Proceed to Checkout
+                      <ArrowRight className="ml-2 w-5 h-5" />
+                    </Button>
+                  </Link>
+
+                  <Link to="/products" className="block">
+                    <Button variant="outline" className="w-full">
+                      Continue Shopping
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

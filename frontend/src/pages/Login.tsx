@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Sparkles, Eye, EyeOff, Mail, Lock, KeyRound } from 'lucide-react';
+import { Sparkles, Eye, EyeOff, Mail, Lock, KeyRound, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { API_URL } from '@/lib/api';
 
@@ -18,9 +18,20 @@ const Login = () => {
   const [otpStep, setOtpStep] = useState(false);
   const [otp, setOtp] = useState('');
   const [tempToken, setTempToken] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendMessage, setResendMessage] = useState('');
   const { login: authLogin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   // Get redirect path from location.state
   const redirectPath = location.state?.from?.pathname || '/';
@@ -62,7 +73,6 @@ const Login = () => {
         window.location.replace(redirectPath);
       } else if (data.message && data.message.toLowerCase().includes('otp')) {
         setOtpStep(true);
-        // Optionally, you can set a tempToken if your backend provides one
       } else {
         setError('Unexpected response.');
       }
@@ -99,10 +109,42 @@ const Login = () => {
     }
   };
 
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
+
+    setResendLoading(true);
+    setResendMessage('');
+    setError('');
+
+    try {
+      const res = await fetch(`${API_URL}/resend-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+
+      if (res.status === 429) {
+        setResendCooldown(data.retryAfter || 60);
+        setError(`Please wait ${data.retryAfter || 60} seconds`);
+      } else if (!res.ok) {
+        setError(data.error || 'Failed to resend OTP');
+      } else {
+        setResendMessage('New OTP sent to your email!');
+        setResendCooldown(data.cooldown || 60);
+        setTimeout(() => setResendMessage(''), 3000);
+      }
+    } catch (err) {
+      setError('Failed to resend OTP');
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-hero p-6">
       <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop')] bg-cover bg-center opacity-5" />
-      
+
       <div className="w-full max-w-md relative z-10">
         {/* Logo */}
         <div className="text-center mb-8 fade-in">
@@ -117,7 +159,7 @@ const Login = () => {
           </Link>
         </div>
 
-        <Card className="perfume-card border-border/50 fade-in" style={{animationDelay: '0.2s'}}>
+        <Card className="perfume-card border-border/50 fade-in" style={{ animationDelay: '0.2s' }}>
           <CardHeader className="text-center pb-6">
             <CardTitle className="text-2xl font-playfair font-bold">
               {otpStep ? 'Enter OTP' : 'Welcome Back'}
@@ -126,87 +168,87 @@ const Login = () => {
               {otpStep ? 'Check your email for a 6-digit code' : 'Sign in to your account to continue your fragrance journey'}
             </CardDescription>
           </CardHeader>
-          
+
           <CardContent className="space-y-6">
             {!otpStep ? (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Email */}
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium">
-                  Email Address
-                </Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="pl-10"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Password */}
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium">
-                  Password
-                </Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 pr-10"
-                    required
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Remember Me & Forgot Password */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="remember"
-                    className="rounded border-border text-primary focus:ring-primary"
-                  />
-                  <Label htmlFor="remember" className="text-sm text-muted-foreground">
-                    Remember me
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Email */}
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm font-medium">
+                    Email Address
                   </Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="your@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-10"
+                      required
+                    />
+                  </div>
                 </div>
-                <Link 
-                  to="/forgot-password" 
-                  className="text-sm text-primary hover:text-primary-glow transition-colors"
-                >
-                  Forgot password?
-                </Link>
-              </div>
+
+                {/* Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-sm font-medium">
+                    Password
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10 pr-10"
+                      required
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Remember Me & Forgot Password */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="remember"
+                      className="rounded border-border text-primary focus:ring-primary"
+                    />
+                    <Label htmlFor="remember" className="text-sm text-muted-foreground">
+                      Remember me
+                    </Label>
+                  </div>
+                  <Link
+                    to="/forgot-password"
+                    className="text-sm text-primary hover:text-primary-glow transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
 
                 {/* Error Message */}
                 {error && (
                   <div className="text-red-500 text-sm text-center">{error}</div>
                 )}
 
-              {/* Submit Button */}
+                {/* Submit Button */}
                 <Button type="submit" className="w-full glow-effect" disabled={loading}>
                   {loading ? 'Signing In...' : 'Sign In'}
                 </Button>
@@ -233,31 +275,53 @@ const Login = () => {
                     />
                   </div>
                 </div>
+
+                {/* Error/Success Messages */}
                 {error && (
                   <div className="text-red-500 text-sm text-center">{error}</div>
                 )}
+                {resendMessage && (
+                  <div className="text-green-500 text-sm text-center">{resendMessage}</div>
+                )}
+
                 <Button type="submit" className="w-full glow-effect" disabled={loading}>
                   {loading ? 'Verifying...' : 'Verify & Sign In'}
-              </Button>
-            </form>
+                </Button>
+
+                {/* Resend OTP Button */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full flex items-center justify-center gap-2"
+                  onClick={handleResendOtp}
+                  disabled={resendLoading || resendCooldown > 0}
+                >
+                  <RefreshCw className={`h-4 w-4 ${resendLoading ? 'animate-spin' : ''}`} />
+                  {resendCooldown > 0
+                    ? `Resend OTP in ${resendCooldown}s`
+                    : resendLoading
+                      ? 'Sending...'
+                      : "Didn't receive code? Resend OTP"}
+                </Button>
+              </form>
             )}
 
             {/* Divider */}
             {!otpStep && (
-            <div className="relative">
-              <Separator />
-              <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-sm text-muted-foreground">
-                or
-              </span>
-            </div>
+              <div className="relative">
+                <Separator />
+                <span className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-card px-3 text-sm text-muted-foreground">
+                  or
+                </span>
+              </div>
             )}
 
             {/* Sign Up Link */}
             <div className="text-center">
               <span className="text-sm text-muted-foreground">
                 Don't have an account?{" "}
-                <Link 
-                  to="/signup" 
+                <Link
+                  to="/signup"
                   className="text-primary hover:text-primary-glow transition-colors font-medium"
                 >
                   Sign up
