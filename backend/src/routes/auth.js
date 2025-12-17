@@ -47,9 +47,19 @@ router.post('/signup', async (req, res) => {
             user,
         };
 
-        await sendOtpEmail(email, otp);
+        const emailResult = await sendOtpEmail(email, otp);
 
         console.log(`✅ User created: ${email}`);
+
+        if (!emailResult.success) {
+            console.error('⚠️ Email failed but user created:', emailResult.error);
+            // User is created, but email failed - still allow login with manual OTP check
+            return res.json({
+                message: 'Account created. Email sending failed - please try resending OTP.',
+                emailError: true
+            });
+        }
+
         res.json({ message: 'Signup successful, OTP sent to email' });
     } catch (err) {
         console.error('❌ Signup error:', err);
@@ -85,9 +95,18 @@ router.post('/login', async (req, res) => {
             user,
         };
 
-        await sendOtpEmail(email, otp);
+        const emailResult = await sendOtpEmail(email, otp);
 
         console.log(`✅ OTP sent for login: ${email}`);
+
+        if (!emailResult.success) {
+            console.error('⚠️ Email failed for login:', emailResult.error);
+            return res.json({
+                message: 'Login successful but email failed. Please try resending OTP.',
+                emailError: true
+            });
+        }
+
         res.json({ message: 'OTP sent to your email' });
     } catch (err) {
         console.error('❌ Login error:', err);

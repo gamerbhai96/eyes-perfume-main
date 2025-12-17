@@ -13,8 +13,17 @@ export async function sendOtpEmail(email, otp) {
 
   try {
     // IMPORTANT: The sender email must be verified in your Brevo account
-    // Verified sender: EYES<kyleagent966@gmail.com>
-    const senderEmail = process.env.EMAIL_FROM || 'kyleagent966@gmail.com';
+    // Verified sender: kyleagent966@gmail.com
+    // EMAIL_FROM should be JUST the email address, not "Name <email>" format
+    let senderEmail = process.env.EMAIL_FROM || 'kyleagent966@gmail.com';
+
+    // Extract just the email if it's in "Name <email>" format
+    const emailMatch = senderEmail.match(/<(.+?)>/);
+    if (emailMatch) {
+      senderEmail = emailMatch[1];
+    }
+    // Also strip any quotes or extra whitespace
+    senderEmail = senderEmail.replace(/['"]/g, '').trim();
 
     console.log('📧 Sender email:', senderEmail);
 
@@ -55,9 +64,8 @@ export async function sendOtpEmail(email, otp) {
     console.error('   Status:', err?.response?.status);
     console.error('   Body:', JSON.stringify(err?.response?.body || err?.body));
     console.error('   Message:', err?.message);
-    // Don't throw - allow login flow to continue even if email fails
-    // but log the full error for debugging
-    return { success: false, error: err?.message };
+    // Return error details so the auth route can handle it
+    return { success: false, error: err?.response?.body?.message || err?.message };
   }
 }
 
