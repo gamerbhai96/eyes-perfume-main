@@ -63,6 +63,23 @@ app.use('/api', (req, res) => {
   res.status(404).json({ error: 'Not Found', path: req.originalUrl });
 });
 
+// -------------------- GLOBAL ERROR HANDLER --------------------
+// Catches JSON parsing errors, unhandled exceptions, etc.
+app.use((err, req, res, next) => {
+  console.error('❌ Global Error Handler:', err.message);
+
+  // Handle JSON parsing errors
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON in request body' });
+  }
+
+  // Handle other errors
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
 // -------------------- START SERVER --------------------
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
