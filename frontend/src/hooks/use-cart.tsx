@@ -22,13 +22,14 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider = ({ children }: { children: React.ReactNode }) => {
-  const { token } = useAuth();
+  const { token, loading: authLoading } = useAuth();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
   const fetchingRef = useRef(false);
 
   const fetchCart = useCallback(async () => {
-    if (!token) {
+    // Don't fetch if no token or auth is still loading
+    if (!token || authLoading) {
       setCart([]);
       return;
     }
@@ -40,6 +41,14 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
       const res = await fetch(`${API_URL}/cart`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+
+      // Handle non-OK responses gracefully
+      if (!res.ok) {
+        console.warn('Cart fetch failed with status:', res.status);
+        setCart([]);
+        return;
+      }
+
       const data = await res.json();
       const items = data.items || [];
       setCart(items.map((item: any) => ({
@@ -54,16 +63,24 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
         },
         quantity: item.quantity
       })));
-    } catch {
+    } catch (err) {
+      // Silently handle network errors - don't crash the app
+      console.warn('Cart fetch error:', err);
       setCart([]);
     } finally {
       fetchingRef.current = false;
     }
-  }, [token]);
+  }, [token, authLoading]);
 
   useEffect(() => {
-    fetchCart();
-  }, [token]);
+    // Only fetch cart once auth has finished loading and we have a token
+    if (!authLoading && token) {
+      fetchCart();
+    } else if (!authLoading && !token) {
+      // Clear cart if user is logged out
+      setCart([]);
+    }
+  }, [token, authLoading, fetchCart]);
 
   // Add items to cart (POST - adds to existing quantity)
   const addToCart = useCallback(async (perfumeId: string, quantity: number = 1) => {
