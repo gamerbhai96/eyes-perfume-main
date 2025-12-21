@@ -84,6 +84,12 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Add items to cart (POST - adds to existing quantity)
   const addToCart = useCallback(async (perfumeId: string, quantity: number = 1) => {
+    // Validate inputs before making API call
+    if (!perfumeId || perfumeId === 'undefined' || perfumeId === 'null') {
+      console.error('Invalid perfumeId:', perfumeId);
+      throw new Error('Invalid product ID');
+    }
+
     if (!token) throw new Error('Not authenticated');
 
     setLoading(true);
@@ -98,7 +104,9 @@ export const CartProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       if (!res.ok) {
-        throw new Error('Failed to add to cart');
+        const errorData = await res.json().catch(() => ({}));
+        console.error('Add to cart failed:', res.status, errorData);
+        throw new Error(errorData.error || 'Failed to add to cart');
       }
 
       await fetchCart();
