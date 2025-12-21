@@ -57,6 +57,11 @@ router.post('/', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Product ID is required' });
         }
 
+        // Validate ObjectId format to prevent CastError
+        if (!perfumeId.match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ error: 'Invalid product ID format' });
+        }
+
         const qty = parseInt(quantity) || 1;
 
         if (qty < 1) {
@@ -151,6 +156,10 @@ router.post('/', authenticateToken, async (req, res) => {
         });
     } catch (err) {
         console.error('❌ ADD TO CART ERROR:', err);
+        // Handle CastError for invalid ObjectId
+        if (err.name === 'CastError') {
+            return res.status(400).json({ error: 'Invalid product ID format' });
+        }
         res.status(500).json({
             error: 'Failed to add item to cart',
             details: err.message,
